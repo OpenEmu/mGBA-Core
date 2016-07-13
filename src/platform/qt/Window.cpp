@@ -45,11 +45,6 @@ extern "C" {
 
 using namespace QGBA;
 
-#if defined(__WIN32) || defined(__OpenBSD__)
-// This is a macro everywhere except MinGW and OpenBSD, it seems
-using std::isnan;
-#endif
-
 Window::Window(ConfigController* config, int playerId, QWidget* parent)
 	: QMainWindow(parent)
 	, m_log(0)
@@ -328,11 +323,12 @@ void Window::multiplayerChanged() {
 void Window::selectBIOS() {
 	QString filename = GBAApp::app()->getOpenFileName(this, tr("Select BIOS"));
 	if (!filename.isEmpty()) {
-		m_config->setOption("bios", filename);
+		QFileInfo info(filename);
+		m_config->setOption("bios", info.canonicalFilePath());
 		m_config->updateOption("bios");
 		m_config->setOption("useBios", true);
 		m_config->updateOption("useBios");
-		m_controller->loadBIOS(filename);
+		m_controller->loadBIOS(info.canonicalFilePath());
 	}
 }
 
@@ -731,7 +727,7 @@ void Window::updateTitle(float fps) {
 	m_controller->threadContinue();
 	if (title.isNull()) {
 		setWindowTitle(tr("%1 - %2").arg(projectName).arg(projectVersion));
-	} else if (isnan(fps)) {
+	} else if (fps < 0) {
 		setWindowTitle(tr("%1 - %2 - %3").arg(projectName).arg(title).arg(projectVersion));
 	} else {
 		setWindowTitle(tr("%1 - %2 (%3 fps) - %4").arg(projectName).arg(title).arg(fps).arg(projectVersion));

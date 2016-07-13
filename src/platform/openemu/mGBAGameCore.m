@@ -299,19 +299,13 @@ const int GBAMap[] = {
 	}
 	cheatSet = malloc(sizeof(*cheatSet));
 	GBACheatSetInit(cheatSet, [codeId UTF8String]);
-//	if ([type isEqual:@"GameShark"]) {
-//		GBACheatSetGameSharkVersion(cheatSet, 1);
-//	} else if ([type isEqual:@"Action Replay"]) {
-//		GBACheatSetGameSharkVersion(cheatSet, 3);
-//	}
+	if ([type isEqual:@"GameShark"]) {
+		GBACheatSetGameSharkVersion(cheatSet, 1);
+	} else if ([type isEqual:@"Action Replay"]) {
+		GBACheatSetGameSharkVersion(cheatSet, 3);
+	}
 	NSArray *codeSet = [code componentsSeparatedByString:@"+"];
 	for (id c in codeSet) {
-        if ([c length] == 16)
-        {
-            // Default to GameShark Advance/Action Replay (v1/v2) for now
-            // Cheat support will be better in next mGBA version, especially Codebreaker/GameShark SP/Xploder codes
-            GBACheatSetGameSharkVersion(cheatSet, 1);
-        }
 		GBACheatAddLine(cheatSet, [c UTF8String]);
 	}
 	cheatSet->enabled = enabled;

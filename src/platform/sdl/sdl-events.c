@@ -57,6 +57,21 @@ bool GBASDLInitEvents(struct GBASDLEvents* context) {
 	SDL_JoystickListInit(&context->joysticks, nJoysticks);
 	if (nJoysticks > 0) {
 		GBASDLUpdateJoysticks(context);
+		// Some OSes don't do hotplug detection
+		if (!SDL_JoystickListSize(&context->joysticks)) {
+			int i;
+			for (i = 0; i < nJoysticks; ++i) {
+				struct SDL_JoystickCombo* joystick = SDL_JoystickListAppend(&context->joysticks);
+				joystick->joystick = SDL_JoystickOpen(i);
+				joystick->index = SDL_JoystickListSize(&context->joysticks) - 1;
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+				joystick->id = SDL_JoystickInstanceID(joystick->joystick);
+				joystick->haptic = SDL_HapticOpenFromJoystick(joystick->joystick);
+#else
+				joystick->id = SDL_JoystickIndex(joystick->joystick);
+#endif
+			}
+		}
 	}
 
 	context->playersAttached = 0;
@@ -129,17 +144,6 @@ void GBASDLInitBindings(struct GBAInputMap* inputMap) {
 	GBAInputBindKey(inputMap, SDL_BINDING_KEY, SDLK_LEFT, GBA_KEY_LEFT);
 	GBAInputBindKey(inputMap, SDL_BINDING_KEY, SDLK_RIGHT, GBA_KEY_RIGHT);
 #endif
-
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 13, GBA_KEY_A);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 14, GBA_KEY_B);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 10, GBA_KEY_L);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 11, GBA_KEY_R);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 3, GBA_KEY_START);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 0, GBA_KEY_SELECT);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 4, GBA_KEY_UP);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 6, GBA_KEY_DOWN);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 7, GBA_KEY_LEFT);
-	GBAInputBindKey(inputMap, SDL_BINDING_BUTTON, 5, GBA_KEY_RIGHT);
 
 	struct GBAAxis description = { GBA_KEY_RIGHT, GBA_KEY_LEFT, 0x4000, -0x4000 };
 	GBAInputBindAxis(inputMap, SDL_BINDING_BUTTON, 0, &description);
@@ -580,7 +584,7 @@ void GBASDLHandleEvent(struct GBAThread* context, struct GBASDLPlayer* sdlContex
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 static void _GBASDLSetRumble(struct GBARumble* rumble, int enable) {
 	struct GBASDLRumble* sdlRumble = (struct GBASDLRumble*) rumble;
-	if (!sdlRumble->p->joystick->haptic || !SDL_HapticRumbleSupported(sdlRumble->p->joystick->haptic)) {
+	if (!sdlRumble->p->joystick || !sdlRumble->p->joystick->haptic || !SDL_HapticRumbleSupported(sdlRumble->p->joystick->haptic)) {
 		return;
 	}
 	sdlRumble->level += enable;

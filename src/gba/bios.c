@@ -88,7 +88,6 @@ static void _RegisterRamReset(struct GBA* gba) {
 		memset(gba->audio.ch3.wavedata, 0, sizeof(gba->audio.ch3.wavedata));
 	}
 	if (registers & 0x80) {
-		cpu->memory.store16(cpu, BASE_IO | 0x00, 0, 0);
 		cpu->memory.store16(cpu, BASE_IO | 0x04, 0, 0);
 		cpu->memory.store16(cpu, BASE_IO | 0x06, 0, 0);
 		cpu->memory.store16(cpu, BASE_IO | 0x08, 0, 0);
@@ -302,7 +301,7 @@ void GBASwi16(struct ARMCore* cpu, int immediate) {
 		cpu->gprs[0] = sqrt((uint32_t) cpu->gprs[0]);
 		break;
 	case 0xA:
-		cpu->gprs[0] = atan2f(cpu->gprs[1] / 16384.f, cpu->gprs[0] / 16384.f) / (2 * M_PI) * 0x10000;
+		cpu->gprs[0] = (uint16_t) (atan2f(cpu->gprs[1] / 16384.f, cpu->gprs[0] / 16384.f) / (2 * M_PI) * 0x10001);
 		break;
 	case 0xB:
 	case 0xC:

@@ -11,7 +11,9 @@
 #include "MultiplayerController.h"
 #include "VFileDevice.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QFileInfo>
 #include <QThread>
 
 #include <ctime>
@@ -39,6 +41,7 @@ GameController::GameController(QObject* parent)
 	, m_inactiveKeys(0)
 	, m_logLevels(0)
 	, m_gameOpen(false)
+	, m_useBios(false)
 	, m_audioThread(new QThread(this))
 	, m_audioProcessor(AudioProcessor::create())
 	, m_pauseAfterFrame(false)
@@ -203,9 +206,7 @@ GameController::GameController(QObject* parent)
 	m_audioThread->setObjectName("Audio Thread");
 	m_audioThread->start(QThread::TimeCriticalPriority);
 	m_audioProcessor->moveToThread(m_audioThread);
-	connect(this, SIGNAL(gameStarted(GBAThread*)), m_audioProcessor, SLOT(start()));
 	connect(this, SIGNAL(gamePaused(GBAThread*)), m_audioProcessor, SLOT(pause()));
-	connect(this, SIGNAL(gameUnpaused(GBAThread*)), m_audioProcessor, SLOT(start()));
 	connect(this, SIGNAL(frameAvailable(const uint32_t*)), this, SLOT(pollEvents()));
 	connect(this, SIGNAL(frameAvailable(const uint32_t*)), this, SLOT(updateAutofire()));
 }
@@ -282,14 +283,12 @@ void GameController::setDebugger(ARMDebugger* debugger) {
 
 void GameController::loadGame(const QString& path) {
 	closeGame();
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly)) {
+	QFileInfo info(path);
+	if (!info.isReadable()) {
 		postLog(GBA_LOG_ERROR, tr("Failed to open game file: %1").arg(path));
 		return;
 	}
-	file.close();
-
-	m_fname = path;
+	m_fname = info.canonicalFilePath();
 	openGame();
 }
 
@@ -340,6 +339,8 @@ void GameController::openGame(bool biosOnly) {
 	if (!GBAThreadStart(&m_threadContext)) {
 		m_gameOpen = false;
 		emit gameFailed();
+	} else if (m_audioProcessor) {
+		startAudio();
 	}
 }
 
@@ -368,7 +369,12 @@ void GameController::replaceGame(const QString& path) {
 		return;
 	}
 
-	m_fname = path;
+	QFileInfo info(path);
+	if (!info.isReadable()) {
+		postLog(GBA_LOG_ERROR, tr("Failed to open game file: %1").arg(path));
+		return;
+	}
+	m_fname = info.canonicalFilePath();
 	threadInterrupt();
 	m_threadContext.fname = strdup(m_fname.toLocal8Bit().constData());
 	GBAThreadReplaceROM(&m_threadContext, m_threadContext.fname);
@@ -419,6 +425,8 @@ void GameController::closeGame() {
 	if (!m_gameOpen) {
 		return;
 	}
+	m_gameOpen = false;
+
 	m_rewindTimer.stop();
 	if (GBAThreadIsPaused(&m_threadContext)) {
 		GBAThreadUnpause(&m_threadContext);
@@ -426,6 +434,8 @@ void GameController::closeGame() {
 	m_audioProcessor->pause();
 	GBAThreadEnd(&m_threadContext);
 	GBAThreadJoin(&m_threadContext);
+	// Make sure the event queue clears out before the thread is reused
+	QCoreApplication::processEvents();
 	if (m_threadContext.fname) {
 		free(const_cast<char*>(m_threadContext.fname));
 		m_threadContext.fname = nullptr;
@@ -465,6 +475,7 @@ void GameController::setPaused(bool paused) {
 		m_pauseAfterFrame.testAndSetRelaxed(false, true);
 	} else {
 		GBAThreadUnpause(&m_threadContext);
+		startAudio();
 		emit gameUnpaused(&m_threadContext);
 	}
 }
@@ -641,6 +652,19 @@ void GameController::setAudioChannelEnabled(int channel, bool enable) {
 			m_threadContext.gba->audio.forceDisableChB = !enable;
 			break;
 		}
+	}
+}
+
+void GameController::startAudio() {
+	bool started = false;
+	QMetaObject::invokeMethod(m_audioProcessor, "start", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, started));
+	if (!started) {
+		LOG(ERROR) << tr("Failed to start audio processor");
+		// Don't freeze!
+		m_audioSync = false;
+		m_videoSync = true;
+		m_threadContext.sync.audioWait = false;
+		m_threadContext.sync.videoFrameWait = true;
 	}
 }
 
@@ -895,12 +919,10 @@ void GameController::reloadAudioDriver() {
 		m_audioProcessor->requestSampleRate(sampleRate);
 	}
 	m_audioProcessor->moveToThread(m_audioThread);
-	connect(this, SIGNAL(gameStarted(GBAThread*)), m_audioProcessor, SLOT(start()));
 	connect(this, SIGNAL(gamePaused(GBAThread*)), m_audioProcessor, SLOT(pause()));
-	connect(this, SIGNAL(gameUnpaused(GBAThread*)), m_audioProcessor, SLOT(start()));
 	if (isLoaded()) {
 		m_audioProcessor->setInput(&m_threadContext);
-		QMetaObject::invokeMethod(m_audioProcessor, "start");
+		startAudio();
 	}
 }
 

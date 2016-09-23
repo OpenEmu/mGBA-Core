@@ -82,10 +82,10 @@ const char* const binaryName = "mGBA";
 - (void)dealloc
 {
 	core->deinit(core);
-	[cheatSets release];
+	//[cheatSets release];
 	free(outputBuffer);
 
-	[super dealloc];
+	//[super dealloc];
 }
 
 #pragma mark - Execution

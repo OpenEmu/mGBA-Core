@@ -25,6 +25,7 @@ public:
 	virtual unsigned sampleRate() const override;
 
 public slots:
+	virtual void setInput(mCoreThread* input) override;
 	virtual bool start() override;
 	virtual void pause() override;
 
@@ -34,7 +35,7 @@ public slots:
 	virtual void requestSampleRate(unsigned) override;
 
 private:
-	GBASDLAudio m_audio;
+	mSDLAudio m_audio;
 };
 
 }

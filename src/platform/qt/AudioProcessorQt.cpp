@@ -11,7 +11,7 @@
 #include <QAudioOutput>
 
 extern "C" {
-#include "gba/supervisor/thread.h"
+#include "core/thread.h"
 }
 
 using namespace QGBA;
@@ -24,7 +24,7 @@ AudioProcessorQt::AudioProcessorQt(QObject* parent)
 {
 }
 
-void AudioProcessorQt::setInput(GBAThread* input) {
+void AudioProcessorQt::setInput(mCoreThread* input) {
 	AudioProcessor::setInput(input);
 	if (m_device) {
 		m_device->setInput(input);
@@ -36,7 +36,7 @@ void AudioProcessorQt::setInput(GBAThread* input) {
 
 bool AudioProcessorQt::start() {
 	if (!input()) {
-		LOG(WARN) << tr("Can't start an audio processor without input");
+		LOG(QT, WARN) << tr("Can't start an audio processor without input");
 		return false;
 	}
 
@@ -59,7 +59,7 @@ bool AudioProcessorQt::start() {
 
 	m_device->setInput(input());
 	m_device->setFormat(m_audioOutput->format());
-	m_audioOutput->setBufferSize(input()->audioBuffers * 4);
+	m_audioOutput->setBufferSize(input()->core->getAudioBufferSize(input()->core) * 4);
 
 	m_audioOutput->start(m_device);
 	return m_audioOutput->state() == QAudio::ActiveState;

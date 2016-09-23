@@ -42,6 +42,8 @@
 
 #define SAMPLES 1024
 
+const char* const binaryName = "mGBA";
+
 @interface mGBAGameCore () <OEGBASystemResponderClient>
 {
 	struct mCore* core;

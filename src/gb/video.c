@@ -91,8 +91,10 @@ int32_t GBVideoProcessEvents(struct GBVideo* video, int32_t cycles) {
 		video->nextEvent -= cycles;
 	}
 	if (video->nextEvent <= 0) {
-		if (video->nextEvent != INT_MAX) {
+		if (video->nextMode != INT_MAX) {
 			video->nextMode -= video->eventDiff;
+		}
+		if (video->nextFrame != INT_MAX) {
 			video->nextFrame -= video->eventDiff;
 		}
 		video->nextEvent = INT_MAX;
@@ -108,7 +110,7 @@ int32_t GBVideoProcessEvents(struct GBVideo* video, int32_t cycles) {
 				video->p->memory.io[REG_LY] = video->ly;
 				video->stat = GBRegisterSTATSetLYC(video->stat, lyc == video->ly);
 				if (video->ly < GB_VIDEO_VERTICAL_PIXELS) {
-					video->nextMode = GB_VIDEO_MODE_2_LENGTH;
+					video->nextMode = GB_VIDEO_MODE_2_LENGTH + (video->p->memory.io[REG_SCX] & 7);
 					video->mode = 2;
 					if (!GBRegisterSTATIsHblankIRQ(video->stat) && GBRegisterSTATIsOAMIRQ(video->stat)) {
 						video->p->memory.io[REG_IF] |= (1 << GB_IRQ_LCDSTAT);
@@ -116,22 +118,9 @@ int32_t GBVideoProcessEvents(struct GBVideo* video, int32_t cycles) {
 				} else {
 					video->nextMode = GB_VIDEO_HORIZONTAL_LENGTH;
 					video->mode = 1;
-					--video->frameskipCounter;
-					if (video->frameskipCounter < 0) {
-						mCoreSyncPostFrame(video->p->sync);
-						video->frameskipCounter = video->frameskip;
-					}
-					++video->frameCounter;
 
 					if (video->nextFrame != 0) {
 						video->nextFrame = 0;
-					}
-
-					if (video->p->stream && video->p->stream->postVideoFrame) {
-						const color_t* pixels;
-						size_t stride;
-						video->renderer->getPixels(video->renderer, &stride, (const void**) &pixels);
-						video->p->stream->postVideoFrame(video->p->stream, pixels, stride);
 					}
 
 					if (GBRegisterSTATIsVblankIRQ(video->stat) || GBRegisterSTATIsOAMIRQ(video->stat)) {
@@ -153,7 +142,8 @@ int32_t GBVideoProcessEvents(struct GBVideo* video, int32_t cycles) {
 				if (video->ly == GB_VIDEO_VERTICAL_TOTAL_PIXELS + 1) {
 					video->ly = 0;
 					video->p->memory.io[REG_LY] = video->ly;
-					video->nextMode = GB_VIDEO_MODE_2_LENGTH;
+					// TODO: Cache SCX & 7 in case it changes during mode 2
+					video->nextMode = GB_VIDEO_MODE_2_LENGTH + (video->p->memory.io[REG_SCX] & 7);
 					video->mode = 2;
 					if (GBRegisterSTATIsOAMIRQ(video->stat)) {
 						video->p->memory.io[REG_IF] |= (1 << GB_IRQ_LCDSTAT);
@@ -186,11 +176,12 @@ int32_t GBVideoProcessEvents(struct GBVideo* video, int32_t cycles) {
 				video->dotCounter = 0;
 				video->nextEvent = GB_VIDEO_HORIZONTAL_LENGTH;
 				video->x = 0;
-				video->nextMode = GB_VIDEO_MODE_3_LENGTH_BASE + video->objMax * 12;
+				// TODO: Estimate sprite timings better
+				video->nextMode = GB_VIDEO_MODE_3_LENGTH_BASE + video->objMax * 11 - (video->p->memory.io[REG_SCX] & 7);
 				video->mode = 3;
 				break;
 			case 3:
-				video->nextMode = GB_VIDEO_MODE_0_LENGTH_BASE - video->objMax * 12;
+				video->nextMode = GB_VIDEO_MODE_0_LENGTH_BASE - video->objMax * 11;
 				video->mode = 0;
 				if (GBRegisterSTATIsHblankIRQ(video->stat)) {
 					video->p->memory.io[REG_IF] |= (1 << GB_IRQ_LCDSTAT);
@@ -209,6 +200,21 @@ int32_t GBVideoProcessEvents(struct GBVideo* video, int32_t cycles) {
 			if (video->p->cpu->executionState == LR35902_CORE_FETCH) {
 				GBFrameEnded(video->p);
 				video->nextFrame = GB_VIDEO_TOTAL_LENGTH;
+				video->nextEvent = GB_VIDEO_TOTAL_LENGTH;
+
+				--video->frameskipCounter;
+				if (video->frameskipCounter < 0) {
+					mCoreSyncPostFrame(video->p->sync);
+					video->frameskipCounter = video->frameskip;
+				}
+				++video->frameCounter;
+
+				if (video->p->stream && video->p->stream->postVideoFrame) {
+					const color_t* pixels;
+					size_t stride;
+					video->renderer->getPixels(video->renderer, &stride, (const void**) &pixels);
+					video->p->stream->postVideoFrame(video->p->stream, pixels, stride);
+				}
 				struct mCoreThread* thread = mCoreThreadGet();
 				mCoreThreadFrameStarted(thread);
 			} else {
@@ -296,7 +302,7 @@ void GBVideoWriteLCDC(struct GBVideo* video, GBRegisterLCDC value) {
 	if (GBRegisterLCDCIsEnable(video->p->memory.io[REG_LCDC]) && !GBRegisterLCDCIsEnable(value)) {
 		video->mode = 0;
 		video->nextMode = INT_MAX;
-		video->nextEvent = INT_MAX;
+		video->nextEvent = video->nextFrame;
 		video->stat = GBRegisterSTATSetMode(video->stat, video->mode);
 		video->p->memory.io[REG_STAT] = video->stat;
 		video->ly = 0;

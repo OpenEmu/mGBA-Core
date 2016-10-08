@@ -284,6 +284,15 @@ void GameController::clearMultiplayerController() {
 	m_multiplayer = nullptr;
 }
 
+void GameController::setOverride(Override* override) {
+	m_override = override;
+	if (isLoaded()) {
+		threadInterrupt();
+		m_override->identify(m_threadContext.core);
+		threadContinue();
+	}
+}
+
 void GameController::clearOverride() {
 	delete m_override;
 	m_override = nullptr;
@@ -437,6 +446,7 @@ void GameController::openGame(bool biosOnly) {
 	m_vf = nullptr;
 
 	if (m_override) {
+		m_override->identify(m_threadContext.core);
 		m_override->apply(m_threadContext.core);
 	}
 
@@ -497,6 +507,7 @@ void GameController::replaceGame(const QString& path) {
 	}
 	m_fname = info.canonicalFilePath();
 	threadInterrupt();
+	mDirectorySetDetachBase(&m_threadContext.core->dirs);
 	mCoreLoadFile(m_threadContext.core, m_fname.toLocal8Bit().constData());
 	threadContinue();
 }
@@ -562,6 +573,9 @@ void GameController::closeGame() {
 	if (mCoreThreadIsPaused(&m_threadContext)) {
 		mCoreThreadUnpause(&m_threadContext);
 	}
+	m_patch = QString();
+	clearOverride();
+
 	QMetaObject::invokeMethod(m_audioProcessor, "pause", Qt::BlockingQueuedConnection);
 	mCoreThreadEnd(&m_threadContext);
 }
@@ -574,8 +588,6 @@ void GameController::cleanGame() {
 
 	delete[] m_drawContext;
 	delete[] m_frontBuffer;
-
-	m_patch = QString();
 
 	m_threadContext.core->deinit(m_threadContext.core);
 	m_gameOpen = false;

@@ -89,7 +89,15 @@ Window::Window(ConfigController* config, int playerId, QWidget* parent)
 
 	m_screenWidget->setMinimumSize(m_display->minimumSize());
 	m_screenWidget->setSizePolicy(m_display->sizePolicy());
-	m_screenWidget->setSizeHint(m_display->minimumSize() * 2);
+	int i = 2;
+	QVariant multiplier = m_config->getOption("scaleMultiplier");
+	if (!multiplier.isNull()) {
+		m_savedScale = multiplier.toInt();
+		i = m_savedScale;
+	}
+#ifdef M_CORE_GBA
+	m_screenWidget->setSizeHint(QSize(VIDEO_HORIZONTAL_PIXELS * i, VIDEO_VERTICAL_PIXELS * i));
+#endif
 	m_screenWidget->setPixmap(m_logo);
 	m_screenWidget->setLockAspectRatio(m_logo.width(), m_logo.height());
 	setCentralWidget(m_screenWidget);
@@ -567,17 +575,15 @@ void Window::resizeEvent(QResizeEvent* event) {
 	if (m_controller->isLoaded()) {
 		size = m_controller->screenDimensions();
 	}
-	if (event->size().width() % size.width() == 0 && event->size().height() % size.height() == 0 &&
-	    event->size().width() / size.width() == event->size().height() / size.height()) {
-		factor = event->size().width() / size.width();
+	if (m_screenWidget->width() % size.width() == 0 && m_screenWidget->height() % size.height() == 0 &&
+	    m_screenWidget->width() / size.width() == m_screenWidget->height() / size.height()) {
+		factor = m_screenWidget->width() / size.width();
+	} else {
+		m_savedScale = 0;
 	}
 	for (QMap<int, QAction*>::iterator iter = m_frameSizes.begin(); iter != m_frameSizes.end(); ++iter) {
 		bool enableSignals = iter.value()->blockSignals(true);
-		if (iter.key() == factor) {
-			iter.value()->setChecked(true);
-		} else {
-			iter.value()->setChecked(false);
-		}
+		iter.value()->setChecked(iter.key() == factor);
 		iter.value()->blockSignals(enableSignals);
 	}
 
@@ -603,6 +609,11 @@ void Window::showEvent(QShowEvent* event) {
 void Window::closeEvent(QCloseEvent* event) {
 	emit shutdown();
 	m_config->setQtOption("windowPos", pos());
+
+	if (m_savedScale > 0) {
+		m_config->setOption("height", VIDEO_VERTICAL_PIXELS * m_savedScale);
+		m_config->setOption("width", VIDEO_HORIZONTAL_PIXELS * m_savedScale);
+	}
 	saveConfig();
 	QMainWindow::closeEvent(event);
 }
@@ -705,6 +716,10 @@ void Window::gameStarted(mCoreThread* context, const QString& fname) {
 	unsigned width, height;
 	context->core->desiredVideoDimensions(context->core, &width, &height);
 	m_display->setMinimumSize(width, height);
+	m_screenWidget->setMinimumSize(m_display->minimumSize());
+	if (m_savedScale > 0) {
+		resizeFrame(QSize(width, height) * m_savedScale);
+	}
 	attachWidget(m_display);
 
 #ifndef Q_OS_MAC
@@ -733,6 +748,12 @@ void Window::gameStopped() {
 	m_screenWidget->setLockAspectRatio(m_logo.width(), m_logo.height());
 	m_screenWidget->setPixmap(m_logo);
 	m_screenWidget->unsetCursor();
+#ifdef M_CORE_GB
+	m_display->setMinimumSize(GB_VIDEO_HORIZONTAL_PIXELS, GB_VIDEO_VERTICAL_PIXELS);
+#elif defined(M_CORE_GBA)
+	m_display->setMinimumSize(VIDEO_HORIZONTAL_PIXELS, VIDEO_VERTICAL_PIXELS);
+#endif
+	m_screenWidget->setMinimumSize(m_display->minimumSize());
 
 	m_fpsTimer.stop();
 	m_focusCheck.stop();
@@ -1165,6 +1186,9 @@ void Window::setupMenu(QMenuBar* menubar) {
 	for (int i = 1; i <= 6; ++i) {
 		QAction* setSize = new QAction(tr("%1x").arg(QString::number(i)), avMenu);
 		setSize->setCheckable(true);
+		if (m_savedScale == i) {
+			setSize->setChecked(true);
+		}
 		connect(setSize, &QAction::triggered, [this, i, setSize]() {
 			showNormal();
 			QSize size(VIDEO_HORIZONTAL_PIXELS, VIDEO_VERTICAL_PIXELS);
@@ -1172,6 +1196,8 @@ void Window::setupMenu(QMenuBar* menubar) {
 				size = m_controller->screenDimensions();
 			}
 			size *= i;
+			m_savedScale = i;
+			m_config->setOption("scaleMultiplier", i); // TODO: Port to other
 			resizeFrame(size);
 			bool enableSignals = setSize->blockSignals(true);
 			setSize->setChecked(true);

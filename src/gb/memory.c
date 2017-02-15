@@ -394,7 +394,7 @@ void GBMemoryWriteHDMA5(struct GB* gb, uint8_t value) {
 	gb->memory.hdmaDest |= 0x8000;
 	bool wasHdma = gb->memory.isHdma;
 	gb->memory.isHdma = value & 0x80;
-	if (!wasHdma && !gb->memory.isHdma) {
+	if ((!wasHdma && !gb->memory.isHdma) || gb->video.mode == 0) {
 		gb->memory.hdmaRemaining = ((value & 0x7F) + 1) * 0x10;
 		gb->memory.hdmaNext = gb->cpu->cycles;
 		gb->cpu->nextEvent = gb->cpu->cycles;
@@ -437,7 +437,7 @@ void _GBMemoryHDMAService(struct GB* gb) {
 				gb->memory.isHdma = false;
 			}
 		} else {
-			gb->memory.io[REG_HDMA5] |= 0x80;
+			gb->memory.io[REG_HDMA5] = 0xFF;
 		}
 	}
 }
@@ -508,8 +508,8 @@ void GBPatch8(struct LR35902Core* cpu, uint16_t address, int8_t value, int8_t* o
 	case GB_REGION_CART_BANK0 + 2:
 	case GB_REGION_CART_BANK0 + 3:
 		_pristineCow(gb);
-		oldValue = memory->rom[address & (GB_SIZE_CART_BANK0 - 1)];
-		memory->rom[address & (GB_SIZE_CART_BANK0 - 1)] =  value;
+		oldValue = memory->romBase[address & (GB_SIZE_CART_BANK0 - 1)];
+		memory->romBase[address & (GB_SIZE_CART_BANK0 - 1)] =  value;
 		break;
 	case GB_REGION_CART_BANK1:
 	case GB_REGION_CART_BANK1 + 1:
@@ -652,5 +652,8 @@ void _pristineCow(struct GB* gb) {
 	gb->memory.rom = anonymousMemoryMap(GB_SIZE_CART_MAX);
 	memcpy(gb->memory.rom, gb->pristineRom, gb->memory.romSize);
 	memset(((uint8_t*) gb->memory.rom) + gb->memory.romSize, 0xFF, GB_SIZE_CART_MAX - gb->memory.romSize);
+	if (gb->pristineRom == gb->memory.romBase) {
+		gb->memory.romBase = gb->memory.rom;
+	}
 	GBMBCSwitchBank(&gb->memory, gb->memory.currentBank);
 }

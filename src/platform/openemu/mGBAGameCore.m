@@ -131,8 +131,8 @@ const char* const binaryName = "mGBA";
 
 - (void)setupEmulation
 {
-	blip_set_rates(core->getAudioChannel(core, 0), GBA_ARM7TDMI_FREQUENCY, 32768);
-	blip_set_rates(core->getAudioChannel(core, 1), GBA_ARM7TDMI_FREQUENCY, 32768);
+	blip_set_rates(core->getAudioChannel(core, 0), core->frequency(core), 32768);
+	blip_set_rates(core->getAudioChannel(core, 1), core->frequency(core), 32768);
 }
 
 #pragma mark - Video
@@ -178,7 +178,7 @@ const char* const binaryName = "mGBA";
 
 - (NSTimeInterval)frameInterval
 {
-	return GBA_ARM7TDMI_FREQUENCY / (double) VIDEO_TOTAL_LENGTH;
+	return core->frequency(core) / (double) core->frameCycles(core);
 }
 
 #pragma mark - Audio

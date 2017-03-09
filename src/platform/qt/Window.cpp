@@ -73,6 +73,7 @@ Window::Window(ConfigController* config, int playerId, QWidget* parent)
 	, m_shortcutController(new ShortcutController(this))
 	, m_fullscreenOnStart(false)
 	, m_autoresume(false)
+	, m_wasOpened(false)
 {
 	setFocusPolicy(Qt::StrongFocus);
 	setAcceptDrops(true);
@@ -591,6 +592,10 @@ void Window::resizeEvent(QResizeEvent* event) {
 }
 
 void Window::showEvent(QShowEvent* event) {
+	if (m_wasOpened) {
+		return;
+	}
+	m_wasOpened = true;
 	resizeFrame(m_screenWidget->sizeHint());
 	QVariant windowPos = m_config->getQtOption("windowPos");
 	if (!windowPos.isNull()) {
@@ -1341,11 +1346,9 @@ void Window::setupMenu(QMenuBar* menubar) {
 	connect(viewLogs, SIGNAL(triggered()), m_logView, SLOT(show()));
 	addControlledAction(toolsMenu, viewLogs, "viewLogs");
 
-#ifdef M_CORE_GBA
 	QAction* overrides = new QAction(tr("Game &overrides..."), toolsMenu);
 	connect(overrides, SIGNAL(triggered()), this, SLOT(openOverrideWindow()));
 	addControlledAction(toolsMenu, overrides, "overrideWindow");
-#endif
 
 	QAction* sensors = new QAction(tr("Game &Pak sensors..."), toolsMenu);
 	connect(sensors, SIGNAL(triggered()), this, SLOT(openSensorWindow()));

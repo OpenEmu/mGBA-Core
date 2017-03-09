@@ -279,13 +279,13 @@ const int GBAMap[] = {
 	}
 	struct mCheatDevice* cheats = core->cheatDevice(core);
 	cheatSet = cheats->createSet(cheats, [codeId UTF8String]);
-    size_t size = mCheatSetsSize(&cheats->cheats);
-    if (size) {
-        cheatSet->copyProperties(cheatSet, *mCheatSetsGetPointer(&cheats->cheats, size - 1));
-    }
+	size_t size = mCheatSetsSize(&cheats->cheats);
+	if (size) {
+		cheatSet->copyProperties(cheatSet, *mCheatSetsGetPointer(&cheats->cheats, size - 1));
+	}
 	int codeType = GBA_CHEAT_AUTODETECT;
-    // NOTE: This is deprecated and was only meant to test cheats with the UI using cheats-database.xml
-    // Will be replaced with a sqlite database in the future.
+	// NOTE: This is deprecated and was only meant to test cheats with the UI using cheats-database.xml
+	// Will be replaced with a sqlite database in the future.
 	if ([type isEqual:@"GameShark"]) {
 		codeType = GBA_CHEAT_GAMESHARK;
 	} else if ([type isEqual:@"Action Replay"]) {
@@ -293,10 +293,10 @@ const int GBAMap[] = {
 	}
 	NSArray *codeSet = [code componentsSeparatedByString:@"+"];
 	for (id c in codeSet) {
-        if ([c length] == 12)
-            codeType = GBA_CHEAT_CODEBREAKER;
-        if ([c length] == 16) // default to GS/AR v1/v2 code (can't determine GS/AR v1/v2 vs AR v3 because same length)
-            codeType = GBA_CHEAT_GAMESHARK;
+		if ([c length] == 12)
+			codeType = GBA_CHEAT_CODEBREAKER;
+		if ([c length] == 16) // default to GS/AR v1/v2 code (can't determine GS/AR v1/v2 vs AR v3 because same length)
+			codeType = GBA_CHEAT_GAMESHARK;
 		mCheatAddLine(cheatSet, [c UTF8String], codeType);
 	}
 	cheatSet->enabled = enabled;
@@ -304,4 +304,3 @@ const int GBAMap[] = {
 	mCheatAddSet(cheats, cheatSet);
 }
 @end
-

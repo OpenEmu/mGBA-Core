@@ -484,6 +484,9 @@ bool GBALoadMB(struct GBA* gba, struct VFile* vf) {
 }
 
 bool GBALoadROM(struct GBA* gba, struct VFile* vf) {
+	if (!vf) {
+		return false;
+	}
 	GBAUnloadROM(gba);
 	gba->romVf = vf;
 	gba->pristineRomSize = vf->size(vf);
@@ -653,17 +656,19 @@ void GBAWriteIME(struct GBA* gba, uint16_t value) {
 
 void GBARaiseIRQ(struct GBA* gba, enum GBAIRQ irq) {
 	gba->memory.io[REG_IF >> 1] |= 1 << irq;
-	gba->cpu->halted = 0;
 
-	if (gba->memory.io[REG_IME >> 1] && (gba->memory.io[REG_IE >> 1] & 1 << irq)) {
-		ARMRaiseIRQ(gba->cpu);
+	if (gba->memory.io[REG_IE >> 1] & 1 << irq) {
+		gba->cpu->halted = 0;
+		if (gba->memory.io[REG_IME >> 1]) {
+			ARMRaiseIRQ(gba->cpu);
+		}
 	}
 }
 
 void GBATestIRQ(struct ARMCore* cpu) {
 	struct GBA* gba = (struct GBA*) cpu->master;
 	if (gba->memory.io[REG_IME >> 1] && gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1]) {
-		gba->springIRQ = 1;
+		gba->springIRQ = gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1];
 		gba->cpu->nextEvent = gba->cpu->cycles;
 	}
 }

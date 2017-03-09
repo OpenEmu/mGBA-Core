@@ -68,9 +68,10 @@ static void GBInit(void* cpu, struct mCPUComponent* component) {
 
 	gb->model = GB_MODEL_AUTODETECT;
 
-	gb->biosVf = 0;
-	gb->romVf = 0;
-	gb->sramVf = 0;
+	gb->biosVf = NULL;
+	gb->romVf = NULL;
+	gb->sramVf = NULL;
+	gb->sramRealVf = NULL;
 
 	gb->pristineRom = 0;
 	gb->pristineRomSize = 0;
@@ -80,6 +81,9 @@ static void GBInit(void* cpu, struct mCPUComponent* component) {
 }
 
 bool GBLoadROM(struct GB* gb, struct VFile* vf) {
+	if (!vf) {
+		return false;
+	}
 	GBUnloadROM(gb);
 	gb->romVf = vf;
 	gb->pristineRomSize = vf->size(vf);
@@ -101,6 +105,7 @@ bool GBLoadROM(struct GB* gb, struct VFile* vf) {
 	gb->memory.romBase = gb->memory.rom;
 	gb->memory.romSize = gb->pristineRomSize;
 	gb->romCrc32 = doCrc32(gb->memory.rom, gb->memory.romSize);
+	GBMBCSwitchBank(&gb->memory, gb->memory.currentBank);
 
 	if (gb->cpu) {
 		struct LR35902Core* cpu = gb->cpu;
@@ -120,7 +125,7 @@ bool GBLoadSave(struct GB* gb, struct VFile* vf) {
 static void GBSramDeinit(struct GB* gb) {
 	if (gb->sramVf) {
 		gb->sramVf->unmap(gb->sramVf, gb->memory.sram, gb->sramSize);
-		if (gb->memory.mbcType == GB_MBC3_RTC) {
+		if (gb->memory.mbcType == GB_MBC3_RTC && gb->sramVf == gb->sramRealVf) {
 			GBMBCRTCWrite(gb);
 		}
 		gb->sramVf = NULL;
@@ -192,7 +197,7 @@ void GBResizeSram(struct GB* gb, size_t size) {
 
 void GBSramClean(struct GB* gb, uint32_t frameCount) {
 	// TODO: Share with GBASavedataClean
-	if (!gb->sramVf) {
+	if (!gb->sramVf || gb->sramVf != gb->sramRealVf) {
 		return;
 	}
 	if (gb->sramDirty & GB_SRAM_DIRT_NEW) {
@@ -219,6 +224,7 @@ void GBSavedataMask(struct GB* gb, struct VFile* vf, bool writeback) {
 	gb->sramVf = vf;
 	gb->sramMaskWriteback = writeback;
 	gb->memory.sram = vf->map(vf, gb->sramSize, MAP_READ);
+	GBMBCSwitchSramBank(gb, gb->memory.sramCurrentBank);
 }
 
 void GBSavedataUnmask(struct GB* gb) {
@@ -237,15 +243,15 @@ void GBSavedataUnmask(struct GB* gb) {
 
 void GBUnloadROM(struct GB* gb) {
 	// TODO: Share with GBAUnloadROM
+	if (gb->memory.rom && gb->memory.romBase != gb->memory.rom && gb->memory.romBase != gb->pristineRom) {
+		free(gb->memory.romBase);
+	}
 	if (gb->memory.rom && gb->pristineRom != gb->memory.rom) {
 		if (gb->yankedRomSize) {
 			gb->yankedRomSize = 0;
 		}
 		mappedMemoryFree(gb->memory.rom, GB_SIZE_CART_MAX);
 		gb->memory.rom = gb->pristineRom;
-	}
-	if (gb->memory.rom && gb->memory.romBase != gb->memory.rom) {
-		free(gb->memory.romBase);
 	}
 	gb->memory.rom = 0;
 
@@ -298,6 +304,7 @@ void GBDestroy(struct GB* gb) {
 	}
 
 	GBMemoryDeinit(gb);
+	GBAudioDeinit(&gb->audio);
 	GBVideoDeinit(&gb->video);
 	GBSIODeinit(&gb->sio);
 }

@@ -157,9 +157,19 @@ const char* const binaryName = "mGBA";
     return OEIntSizeMake(width, height);
 }
 
-- (const void *)videoBuffer
+- (const void *)getVideoBufferWithHint:(void *)hint
 {
-	return outputBuffer;
+	OEIntSize bufferSize = [self bufferSize];
+
+	if (!hint)
+	{
+		hint = outputBuffer;
+	}
+
+	outputBuffer = hint;
+	core->setVideoBuffer(core, hint, bufferSize.width);
+
+	return hint;
 }
 
 - (GLenum)pixelFormat
@@ -170,11 +180,6 @@ const char* const binaryName = "mGBA";
 - (GLenum)pixelType
 {
     return GL_UNSIGNED_INT_8_8_8_8_REV;
-}
-
-- (GLenum)internalPixelFormat
-{
-    return GL_RGB8;
 }
 
 - (NSTimeInterval)frameInterval

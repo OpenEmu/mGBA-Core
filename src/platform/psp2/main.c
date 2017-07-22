@@ -5,18 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "psp2-context.h"
 
-#include "gba/gba.h"
+#include <mgba/internal/gba/gba.h>
 #include "feature/gui/gui-runner.h"
-#include "util/gui.h"
-#include "util/gui/font.h"
-#include "util/gui/file-select.h"
-#include "util/gui/menu.h"
+#include <mgba-util/gui.h>
+#include <mgba-util/gui/font.h>
+#include <mgba-util/gui/file-select.h>
+#include <mgba-util/gui/menu.h>
 
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
-#include <psp2/moduleinfo.h>
 #include <psp2/power.h>
 #include <psp2/sysmodule.h>
 #include <psp2/touch.h>
@@ -164,6 +163,7 @@ int main() {
 	mPSP2MapKey(&runner.params.keyMap, SCE_CTRL_RIGHT, GUI_INPUT_RIGHT);
 	mPSP2MapKey(&runner.params.keyMap, SCE_CTRL_SQUARE, mGUI_INPUT_SCREEN_MODE);
 
+	scePowerSetArmClockFrequency(444);
 	mGUIRunloop(&runner);
 
 	vita2d_fini();

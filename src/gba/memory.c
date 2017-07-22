@@ -1,28 +1,30 @@
-/* Copyright (c) 2013-2015 Jeffrey Pfau
+/* Copyright (c) 2013-2016 Jeffrey Pfau
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "memory.h"
+#include <mgba/internal/gba/memory.h>
 
-#include "arm/decoder.h"
-#include "gba/hardware.h"
-#include "gba/io.h"
-#include "gba/serialize.h"
+#include <mgba/internal/arm/decoder.h>
+#include <mgba/internal/arm/macros.h>
+#include <mgba/internal/gba/gba.h>
+#include <mgba/internal/gba/dma.h>
+#include <mgba/internal/gba/io.h>
+#include <mgba/internal/gba/serialize.h>
 #include "gba/hle-bios.h"
-#include "util/math.h"
-#include "util/memory.h"
-#include "util/vfs.h"
+
+#include <mgba-util/math.h>
+#include <mgba-util/memory.h>
+#include <mgba-util/vfs.h>
 
 #define IDLE_LOOP_THRESHOLD 10000
 
-mLOG_DEFINE_CATEGORY(GBA_MEM, "GBA Memory");
+mLOG_DEFINE_CATEGORY(GBA_MEM, "GBA Memory", "gba.memory");
 
 static void _pristineCow(struct GBA* gba);
 static uint32_t _deadbeef[1] = { 0xE710B710 }; // Illegal instruction on both ARM and Thumb
 
 static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t region);
-static void GBAMemoryServiceDMA(struct GBA* gba, int number, struct GBADMA* info);
 static int32_t GBAMemoryStall(struct ARMCore* cpu, int32_t wait);
 
 static const char GBA_BASE_WAITSTATES[16] = { 0, 0, 2, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4 };
@@ -31,7 +33,6 @@ static const char GBA_BASE_WAITSTATES_SEQ[16] = { 0, 0, 2, 0, 0, 0, 0, 0, 2, 2, 
 static const char GBA_BASE_WAITSTATES_SEQ_32[16] = { 0, 0, 5, 0, 0, 1, 1, 0, 5, 5, 9, 9, 17, 17, 9 };
 static const char GBA_ROM_WAITSTATES[] = { 4, 3, 2, 8 };
 static const char GBA_ROM_WAITSTATES_SEQ[] = { 2, 1, 4, 1, 8, 1 };
-static const int DMA_OFFSET[] = { 1, -1, 0, 1 };
 
 void GBAMemoryInit(struct GBA* gba) {
 	struct ARMCore* cpu = gba->cpu;
@@ -58,12 +59,8 @@ void GBAMemoryInit(struct GBA* gba) {
 	for (i = 0; i < 16; ++i) {
 		gba->memory.waitstatesNonseq16[i] = GBA_BASE_WAITSTATES[i];
 		gba->memory.waitstatesSeq16[i] = GBA_BASE_WAITSTATES_SEQ[i];
-		gba->memory.waitstatesPrefetchNonseq16[i] = GBA_BASE_WAITSTATES[i];
-		gba->memory.waitstatesPrefetchSeq16[i] = GBA_BASE_WAITSTATES_SEQ[i];
 		gba->memory.waitstatesNonseq32[i] = GBA_BASE_WAITSTATES_32[i];
 		gba->memory.waitstatesSeq32[i] = GBA_BASE_WAITSTATES_SEQ_32[i];
-		gba->memory.waitstatesPrefetchNonseq32[i] = GBA_BASE_WAITSTATES_32[i];
-		gba->memory.waitstatesPrefetchSeq32[i] = GBA_BASE_WAITSTATES_SEQ_32[i];
 	}
 	for (; i < 256; ++i) {
 		gba->memory.waitstatesNonseq16[i] = 0;
@@ -83,6 +80,7 @@ void GBAMemoryInit(struct GBA* gba) {
 	gba->memory.biosPrefetch = 0;
 	gba->memory.mirroring = false;
 
+	GBADMAInit(gba);
 	GBAVFameInit(&gba->memory.vfame);
 }
 
@@ -100,13 +98,12 @@ void GBAMemoryDeinit(struct GBA* gba) {
 }
 
 void GBAMemoryReset(struct GBA* gba) {
-	if (gba->memory.wram) {
-		mappedMemoryFree(gba->memory.wram, SIZE_WORKING_RAM);
-	}
-	gba->memory.wram = anonymousMemoryMap(SIZE_WORKING_RAM);
-	if (gba->pristineRom && !gba->memory.rom) {
-		// Multiboot
-		memcpy(gba->memory.wram, gba->pristineRom, gba->pristineRomSize);
+	if (gba->memory.rom || gba->memory.fullBios || !gba->memory.wram) {
+		// Not multiboot
+		if (gba->memory.wram) {
+			mappedMemoryFree(gba->memory.wram, SIZE_WORKING_RAM);
+		}
+		gba->memory.wram = anonymousMemoryMap(SIZE_WORKING_RAM);
 	}
 
 	if (gba->memory.iwram) {
@@ -115,16 +112,6 @@ void GBAMemoryReset(struct GBA* gba) {
 	gba->memory.iwram = anonymousMemoryMap(SIZE_WORKING_IRAM);
 
 	memset(gba->memory.io, 0, sizeof(gba->memory.io));
-	memset(gba->memory.dma, 0, sizeof(gba->memory.dma));
-	int i;
-	for (i = 0; i < 4; ++i) {
-		gba->memory.dma[i].count = 0x4000;
-		gba->memory.dma[i].nextEvent = INT_MAX;
-	}
-	gba->memory.dma[3].count = 0x10000;
-	gba->memory.activeDMA = -1;
-	gba->memory.nextDMA = INT_MAX;
-	gba->memory.eventDiff = 0;
 
 	gba->memory.prefetch = false;
 	gba->memory.lastPrefetchedPc = 0;
@@ -133,6 +120,8 @@ void GBAMemoryReset(struct GBA* gba) {
 		GBAMemoryDeinit(gba);
 		mLOG(GBA_MEM, FATAL, "Could not map memory");
 	}
+
+	GBADMAReset(gba);
 }
 
 static void _analyzeForIdleLoop(struct GBA* gba, struct ARMCore* cpu, uint32_t address) {
@@ -281,10 +270,10 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 		break;
 	case REGION_VRAM:
 		if (address & 0x10000) {
-			cpu->memory.activeRegion = (uint32_t*) &gba->video.renderer->vram[0x8000];
+			cpu->memory.activeRegion = (uint32_t*) &gba->video.vram[0x8000];
 			cpu->memory.activeMask = 0x00007FFF;
 		} else {
-			cpu->memory.activeRegion = (uint32_t*) gba->video.renderer->vram;
+			cpu->memory.activeRegion = (uint32_t*) gba->video.vram;
 			cpu->memory.activeMask = 0x0000FFFF;
 		}
 		break;
@@ -308,6 +297,17 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 		memory->activeRegion = -1;
 		cpu->memory.activeRegion = _deadbeef;
 		cpu->memory.activeMask = 0;
+
+		if (!gba->yankedRomSize && mCoreCallbacksListSize(&gba->coreCallbacks)) {
+			size_t c;
+			for (c = 0; c < mCoreCallbacksListSize(&gba->coreCallbacks); ++c) {
+				struct mCoreCallbacks* callbacks = mCoreCallbacksListGetPointer(&gba->coreCallbacks, c);
+				if (callbacks->coreCrashed) {
+					callbacks->coreCrashed(callbacks->context);
+				}
+			}
+		}
+
 		if (gba->yankedRomSize || !gba->hardCrash) {
 			mLOG(GBA_MEM, GAME_ERROR, "Jumped to invalid address: %08X", address);
 		} else {
@@ -375,9 +375,9 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 
 #define LOAD_VRAM \
 	if ((address & 0x0001FFFF) < SIZE_VRAM) { \
-		LOAD_32(value, address & 0x0001FFFC, gba->video.renderer->vram); \
+		LOAD_32(value, address & 0x0001FFFC, gba->video.vram); \
 	} else { \
-		LOAD_32(value, address & 0x00017FFC, gba->video.renderer->vram); \
+		LOAD_32(value, address & 0x00017FFC, gba->video.vram); \
 	} \
 	wait += waitstatesRegion[REGION_VRAM];
 
@@ -505,9 +505,9 @@ uint32_t GBALoad16(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 		break;
 	case REGION_VRAM:
 		if ((address & 0x0001FFFF) < SIZE_VRAM) {
-			LOAD_16(value, address & 0x0001FFFE, gba->video.renderer->vram);
+			LOAD_16(value, address & 0x0001FFFE, gba->video.vram);
 		} else {
-			LOAD_16(value, address & 0x00017FFE, gba->video.renderer->vram);
+			LOAD_16(value, address & 0x00017FFE, gba->video.vram);
 		}
 		break;
 	case REGION_OAM:
@@ -606,9 +606,9 @@ uint32_t GBALoad8(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 		break;
 	case REGION_VRAM:
 		if ((address & 0x0001FFFF) < SIZE_VRAM) {
-			value = ((uint8_t*) gba->video.renderer->vram)[address & 0x0001FFFF];
+			value = ((uint8_t*) gba->video.vram)[address & 0x0001FFFF];
 		} else {
-			value = ((uint8_t*) gba->video.renderer->vram)[address & 0x00017FFF];
+			value = ((uint8_t*) gba->video.vram)[address & 0x00017FFF];
 		}
 		break;
 	case REGION_OAM:
@@ -689,11 +689,11 @@ uint32_t GBALoad8(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 
 #define STORE_VRAM \
 	if ((address & 0x0001FFFF) < SIZE_VRAM) { \
-		STORE_32(value, address & 0x0001FFFC, gba->video.renderer->vram); \
+		STORE_32(value, address & 0x0001FFFC, gba->video.vram); \
 		gba->video.renderer->writeVRAM(gba->video.renderer, (address & 0x0001FFFC) + 2); \
 		gba->video.renderer->writeVRAM(gba->video.renderer, (address & 0x0001FFFC)); \
 	} else { \
-		STORE_32(value, address & 0x00017FFC, gba->video.renderer->vram); \
+		STORE_32(value, address & 0x00017FFC, gba->video.vram); \
 		gba->video.renderer->writeVRAM(gba->video.renderer, (address & 0x00017FFC) + 2); \
 		gba->video.renderer->writeVRAM(gba->video.renderer, (address & 0x00017FFC)); \
 	} \
@@ -794,10 +794,10 @@ void GBAStore16(struct ARMCore* cpu, uint32_t address, int16_t value, int* cycle
 		break;
 	case REGION_VRAM:
 		if ((address & 0x0001FFFF) < SIZE_VRAM) {
-			STORE_16(value, address & 0x0001FFFE, gba->video.renderer->vram);
+			STORE_16(value, address & 0x0001FFFE, gba->video.vram);
 			gba->video.renderer->writeVRAM(gba->video.renderer, address & 0x0001FFFE);
 		} else {
-			STORE_16(value, address & 0x00017FFE, gba->video.renderer->vram);
+			STORE_16(value, address & 0x00017FFE, gba->video.vram);
 			gba->video.renderer->writeVRAM(gba->video.renderer, address & 0x00017FFE);
 		}
 		break;
@@ -1050,11 +1050,11 @@ void GBAPatch32(struct ARMCore* cpu, uint32_t address, int32_t value, int32_t* o
 		break;
 	case REGION_VRAM:
 		if ((address & 0x0001FFFF) < SIZE_VRAM) {
-			LOAD_32(oldValue, address & 0x0001FFFC, gba->video.renderer->vram);
-			STORE_32(value, address & 0x0001FFFC, gba->video.renderer->vram);
+			LOAD_32(oldValue, address & 0x0001FFFC, gba->video.vram);
+			STORE_32(value, address & 0x0001FFFC, gba->video.vram);
 		} else {
-			LOAD_32(oldValue, address & 0x00017FFC, gba->video.renderer->vram);
-			STORE_32(value, address & 0x00017FFC, gba->video.renderer->vram);
+			LOAD_32(oldValue, address & 0x00017FFC, gba->video.vram);
+			STORE_32(value, address & 0x00017FFC, gba->video.vram);
 		}
 		break;
 	case REGION_OAM:
@@ -1119,11 +1119,11 @@ void GBAPatch16(struct ARMCore* cpu, uint32_t address, int16_t value, int16_t* o
 		break;
 	case REGION_VRAM:
 		if ((address & 0x0001FFFF) < SIZE_VRAM) {
-			LOAD_16(oldValue, address & 0x0001FFFE, gba->video.renderer->vram);
-			STORE_16(value, address & 0x0001FFFE, gba->video.renderer->vram);
+			LOAD_16(oldValue, address & 0x0001FFFE, gba->video.vram);
+			STORE_16(value, address & 0x0001FFFE, gba->video.vram);
 		} else {
-			LOAD_16(oldValue, address & 0x00017FFE, gba->video.renderer->vram);
-			STORE_16(value, address & 0x00017FFE, gba->video.renderer->vram);
+			LOAD_16(oldValue, address & 0x00017FFE, gba->video.vram);
+			STORE_16(value, address & 0x00017FFE, gba->video.vram);
 		}
 		break;
 	case REGION_OAM:
@@ -1486,260 +1486,6 @@ void GBAAdjustWaitstates(struct GBA* gba, uint16_t parameters) {
 	cpu->memory.activeNonseqCycles16 = memory->waitstatesNonseq16[memory->activeRegion];
 }
 
-static bool _isValidDMASAD(int dma, uint32_t address) {
-	if (dma == 0 && address >= BASE_CART0 && address < BASE_CART_SRAM) {
-		return false;
-	}
-	return address >= BASE_WORKING_RAM;
-}
-
-static bool _isValidDMADAD(int dma, uint32_t address) {
-	return dma == 3 || address < BASE_CART0;
-}
-
-uint32_t GBAMemoryWriteDMASAD(struct GBA* gba, int dma, uint32_t address) {
-	struct GBAMemory* memory = &gba->memory;
-	address &= 0x0FFFFFFE;
-	if (_isValidDMASAD(dma, address)) {
-		memory->dma[dma].source = address;
-	}
-	return memory->dma[dma].source;
-}
-
-uint32_t GBAMemoryWriteDMADAD(struct GBA* gba, int dma, uint32_t address) {
-	struct GBAMemory* memory = &gba->memory;
-	address &= 0x0FFFFFFE;
-	if (_isValidDMADAD(dma, address)) {
-		memory->dma[dma].dest = address;
-	}
-	return memory->dma[dma].dest;
-}
-
-void GBAMemoryWriteDMACNT_LO(struct GBA* gba, int dma, uint16_t count) {
-	struct GBAMemory* memory = &gba->memory;
-	memory->dma[dma].count = count ? count : (dma == 3 ? 0x10000 : 0x4000);
-}
-
-uint16_t GBAMemoryWriteDMACNT_HI(struct GBA* gba, int dma, uint16_t control) {
-	struct GBAMemory* memory = &gba->memory;
-	struct GBADMA* currentDma = &memory->dma[dma];
-	int wasEnabled = GBADMARegisterIsEnable(currentDma->reg);
-	if (dma < 3) {
-		control &= 0xF7E0;
-	} else {
-		control &= 0xFFE0;
-	}
-	currentDma->reg = control;
-
-	if (GBADMARegisterIsDRQ(currentDma->reg)) {
-		mLOG(GBA_MEM, STUB, "DRQ not implemented");
-	}
-
-	if (!wasEnabled && GBADMARegisterIsEnable(currentDma->reg)) {
-		currentDma->nextSource = currentDma->source;
-		currentDma->nextDest = currentDma->dest;
-		currentDma->nextCount = currentDma->count;
-		GBAMemoryScheduleDMA(gba, dma, currentDma);
-	}
-	// If the DMA has already occurred, this value might have changed since the function started
-	return currentDma->reg;
-};
-
-void GBAMemoryScheduleDMA(struct GBA* gba, int number, struct GBADMA* info) {
-	struct ARMCore* cpu = gba->cpu;
-	switch (GBADMARegisterGetTiming(info->reg)) {
-	case DMA_TIMING_NOW:
-		info->nextEvent = cpu->cycles + 2;
-		GBAMemoryUpdateDMAs(gba, -1);
-		break;
-	case DMA_TIMING_HBLANK:
-		// Handled implicitly
-		info->nextEvent = INT_MAX;
-		break;
-	case DMA_TIMING_VBLANK:
-		// Handled implicitly
-		info->nextEvent = INT_MAX;
-		break;
-	case DMA_TIMING_CUSTOM:
-		info->nextEvent = INT_MAX;
-		switch (number) {
-		case 0:
-			mLOG(GBA_MEM, WARN, "Discarding invalid DMA0 scheduling");
-			break;
-		case 1:
-		case 2:
-			GBAAudioScheduleFifoDma(&gba->audio, number, info);
-			break;
-		case 3:
-			// GBAVideoScheduleVCaptureDma(dma, info);
-			break;
-		}
-	}
-}
-
-void GBAMemoryRunHblankDMAs(struct GBA* gba, int32_t cycles) {
-	struct GBAMemory* memory = &gba->memory;
-	struct GBADMA* dma;
-	int i;
-	for (i = 0; i < 4; ++i) {
-		dma = &memory->dma[i];
-		if (GBADMARegisterIsEnable(dma->reg) && GBADMARegisterGetTiming(dma->reg) == DMA_TIMING_HBLANK) {
-			dma->nextEvent = cycles;
-		}
-	}
-	GBAMemoryUpdateDMAs(gba, 0);
-}
-
-void GBAMemoryRunVblankDMAs(struct GBA* gba, int32_t cycles) {
-	struct GBAMemory* memory = &gba->memory;
-	struct GBADMA* dma;
-	int i;
-	for (i = 0; i < 4; ++i) {
-		dma = &memory->dma[i];
-		if (GBADMARegisterIsEnable(dma->reg) && GBADMARegisterGetTiming(dma->reg) == DMA_TIMING_VBLANK) {
-			dma->nextEvent = cycles;
-		}
-	}
-	GBAMemoryUpdateDMAs(gba, 0);
-}
-
-int32_t GBAMemoryRunDMAs(struct GBA* gba, int32_t cycles) {
-	struct GBAMemory* memory = &gba->memory;
-	if (memory->nextDMA == INT_MAX) {
-		return INT_MAX;
-	}
-	memory->nextDMA -= cycles;
-	memory->eventDiff += cycles;
-	while (memory->nextDMA <= 0) {
-		struct GBADMA* dma = &memory->dma[memory->activeDMA];
-		GBAMemoryServiceDMA(gba, memory->activeDMA, dma);
-		GBAMemoryUpdateDMAs(gba, memory->eventDiff);
-		memory->eventDiff = 0;
-	}
-	return memory->nextDMA;
-}
-
-void GBAMemoryUpdateDMAs(struct GBA* gba, int32_t cycles) {
-	int i;
-	struct GBAMemory* memory = &gba->memory;
-	struct ARMCore* cpu = gba->cpu;
-	memory->activeDMA = -1;
-	memory->nextDMA = INT_MAX;
-	for (i = 3; i >= 0; --i) {
-		struct GBADMA* dma = &memory->dma[i];
-		if (dma->nextEvent != INT_MAX) {
-			dma->nextEvent -= cycles;
-			if (GBADMARegisterIsEnable(dma->reg)) {
-				memory->activeDMA = i;
-				memory->nextDMA = dma->nextEvent;
-			}
-		}
-	}
-	if (memory->nextDMA < cpu->nextEvent) {
-		cpu->nextEvent = memory->nextDMA;
-	}
-}
-
-void GBAMemoryServiceDMA(struct GBA* gba, int number, struct GBADMA* info) {
-	struct GBAMemory* memory = &gba->memory;
-	struct ARMCore* cpu = gba->cpu;
-	uint32_t width = GBADMARegisterGetWidth(info->reg) ? 4 : 2;
-	int sourceOffset = DMA_OFFSET[GBADMARegisterGetSrcControl(info->reg)] * width;
-	int destOffset = DMA_OFFSET[GBADMARegisterGetDestControl(info->reg)] * width;
-	int32_t wordsRemaining = info->nextCount;
-	uint32_t source = info->nextSource;
-	uint32_t dest = info->nextDest;
-	uint32_t sourceRegion = source >> BASE_OFFSET;
-	uint32_t destRegion = dest >> BASE_OFFSET;
-	int32_t cycles = 2;
-
-	if (source == info->source && dest == info->dest && wordsRemaining == info->count) {
-		if (sourceRegion < REGION_CART0 || destRegion < REGION_CART0) {
-			cycles += 2;
-		}
-		if (width == 4) {
-			cycles += memory->waitstatesNonseq32[sourceRegion] + memory->waitstatesNonseq32[destRegion];
-			source &= 0xFFFFFFFC;
-			dest &= 0xFFFFFFFC;
-		} else {
-			cycles += memory->waitstatesNonseq16[sourceRegion] + memory->waitstatesNonseq16[destRegion];
-		}
-	} else {
-		if (width == 4) {
-			cycles += memory->waitstatesSeq32[sourceRegion] + memory->waitstatesSeq32[destRegion];
-		} else {
-			cycles += memory->waitstatesSeq16[sourceRegion] + memory->waitstatesSeq16[destRegion];
-		}
-	}
-
-	gba->performingDMA = 1 | (number << 1);
-	int32_t word;
-	if (width == 4) {
-		word = cpu->memory.load32(cpu, source, 0);
-		gba->bus = word;
-		cpu->memory.store32(cpu, dest, word, 0);
-		source += sourceOffset;
-		dest += destOffset;
-		--wordsRemaining;
-	} else {
-		if (sourceRegion == REGION_CART2_EX && memory->savedata.type == SAVEDATA_EEPROM) {
-			word = GBASavedataReadEEPROM(&memory->savedata);
-			gba->bus = word | (word << 16);
-			cpu->memory.store16(cpu, dest, word, 0);
-			source += sourceOffset;
-			dest += destOffset;
-			--wordsRemaining;
-		} else if (destRegion == REGION_CART2_EX) {
-			if (memory->savedata.type == SAVEDATA_AUTODETECT) {
-				mLOG(GBA_MEM, INFO, "Detected EEPROM savegame");
-				GBASavedataInitEEPROM(&memory->savedata, gba->realisticTiming);
-			}
-			word = cpu->memory.load16(cpu, source, 0);
-			gba->bus = word | (word << 16);
-			GBASavedataWriteEEPROM(&memory->savedata, word, wordsRemaining);
-			source += sourceOffset;
-			dest += destOffset;
-			--wordsRemaining;
-		} else {
-			word = cpu->memory.load16(cpu, source, 0);
-			gba->bus = word | (word << 16);
-			cpu->memory.store16(cpu, dest, word, 0);
-			source += sourceOffset;
-			dest += destOffset;
-			--wordsRemaining;
-		}
-	}
-	gba->performingDMA = 0;
-
-	if (!wordsRemaining) {
-		if (!GBADMARegisterIsRepeat(info->reg) || GBADMARegisterGetTiming(info->reg) == DMA_TIMING_NOW) {
-			info->reg = GBADMARegisterClearEnable(info->reg);
-			info->nextEvent = INT_MAX;
-
-			// Clear the enable bit in memory
-			memory->io[(REG_DMA0CNT_HI + number * (REG_DMA1CNT_HI - REG_DMA0CNT_HI)) >> 1] &= 0x7FE0;
-		} else {
-			info->nextCount = info->count;
-			if (GBADMARegisterGetDestControl(info->reg) == DMA_INCREMENT_RELOAD) {
-				info->nextDest = info->dest;
-			}
-			GBAMemoryScheduleDMA(gba, number, info);
-		}
-		if (GBADMARegisterIsDoIRQ(info->reg)) {
-			GBARaiseIRQ(gba, IRQ_DMA0 + number);
-		}
-	} else {
-		info->nextDest = dest;
-		info->nextCount = wordsRemaining;
-	}
-	info->nextSource = source;
-
-	if (info->nextEvent != INT_MAX) {
-		info->nextEvent += cycles;
-	}
-	cpu->cycles += cycles;
-}
-
 int32_t GBAMemoryStall(struct ARMCore* cpu, int32_t wait) {
 	struct GBA* gba = (struct GBA*) cpu->master;
 	struct GBAMemory* memory = &gba->memory;
@@ -1757,33 +1503,32 @@ int32_t GBAMemoryStall(struct ARMCore* cpu, int32_t wait) {
 		previousLoads = dist;
 	}
 
-	int32_t s = cpu->memory.activeSeqCycles16 + 1;
-	int32_t n2s = cpu->memory.activeNonseqCycles16 - cpu->memory.activeSeqCycles16 + 1;
+	int32_t s = cpu->memory.activeSeqCycles16;
+	int32_t n2s = cpu->memory.activeNonseqCycles16 - cpu->memory.activeSeqCycles16;
 
 	// Figure out how many sequential loads we can jam in
 	int32_t stall = s;
 	int32_t loads = 1;
 
-	if (stall > wait && !previousLoads) {
-		// We might need to stall a bit extra if we haven't finished the first S cycle
-		wait = stall;
-	} else {
-		while (stall < wait) {
+	if (stall < wait) {
+		int32_t maxLoads = 8 - previousLoads;
+		while (stall < wait && loads < maxLoads) {
 			stall += s;
 			++loads;
 		}
-		if (loads + previousLoads > 8) {
-			loads = 8 - previousLoads;
-		}
 	}
+	if (stall > wait) {
+		// The wait cannot take less time than the prefetch stalls
+		wait = stall;
+	}
+
 	// This instruction used to have an N, convert it to an S.
 	wait -= n2s;
 
-	// TODO: Invalidate prefetch on branch
-	memory->lastPrefetchedPc = cpu->gprs[ARM_PC] + WORD_SIZE_THUMB * loads;
+	memory->lastPrefetchedPc = cpu->gprs[ARM_PC] + WORD_SIZE_THUMB * (loads + previousLoads - 1);
 
 	// The next |loads|S waitstates disappear entirely, so long as they're all in a row
-	cpu->cycles -= (s - 1) * loads;
+	cpu->cycles -= stall;
 	return wait;
 }
 
@@ -1798,10 +1543,22 @@ void GBAMemoryDeserialize(struct GBAMemory* memory, const struct GBASerializedSt
 }
 
 void _pristineCow(struct GBA* gba) {
-	if (gba->memory.rom != gba->pristineRom) {
+	if (!gba->isPristine) {
 		return;
 	}
-	gba->memory.rom = anonymousMemoryMap(SIZE_CART0);
-	memcpy(gba->memory.rom, gba->pristineRom, gba->memory.romSize);
-	memset(((uint8_t*) gba->memory.rom) + gba->memory.romSize, 0xFF, SIZE_CART0 - gba->memory.romSize);
+	void* newRom = anonymousMemoryMap(SIZE_CART0);
+	memcpy(newRom, gba->memory.rom, gba->memory.romSize);
+	memset(((uint8_t*) newRom) + gba->memory.romSize, 0xFF, SIZE_CART0 - gba->memory.romSize);
+	if (gba->cpu->memory.activeRegion == gba->memory.rom) {
+		gba->cpu->memory.activeRegion = newRom;
+	}
+	if (gba->romVf) {
+#ifndef _3DS
+		gba->romVf->unmap(gba->romVf, gba->memory.rom, gba->memory.romSize);
+#endif
+		gba->romVf->close(gba->romVf);
+		gba->romVf = NULL;
+	}
+	gba->memory.rom = newRom;
+	gba->memory.hw.gpioBase = &((uint16_t*) gba->memory.rom)[GPIO_REG_DATA >> 1];
 }

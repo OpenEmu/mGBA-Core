@@ -24,17 +24,18 @@
 
 #import "mGBAGameCore.h"
 
-#include "util/common.h"
+#include <mgba-util/common.h>
 
-#include "core/serialize.h"
-#include "core/core.h"
-#include "gba/cheats.h"
-#include "gba/core.h"
-#include "gba/gba.h"
-#include "gba/input.h"
-#include "util/circle-buffer.h"
-#include "util/memory.h"
-#include "util/vfs.h"
+#include <mgba/core/blip_buf.h>
+#include <mgba/core/core.h>
+#include <mgba/core/cheats.h>
+#include <mgba/core/serialize.h>
+#include <mgba/gba/core.h>
+#include <mgba/internal/gba/cheats.h>
+#include <mgba/internal/gba/input.h>
+#include <mgba-util/circle-buffer.h>
+#include <mgba-util/memory.h>
+#include <mgba-util/vfs.h>
 
 #import <OpenEmuBase/OERingBuffer.h>
 #import "OEGBASystemResponderClient.h"
@@ -304,3 +305,4 @@ const int GBAMap[] = {
 	mCheatAddSet(cheats, cheatSet);
 }
 @end
+

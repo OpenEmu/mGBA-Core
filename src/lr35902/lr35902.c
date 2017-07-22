@@ -3,9 +3,9 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "lr35902.h"
+#include <mgba/internal/lr35902/lr35902.h>
 
-#include "isa-lr35902.h"
+#include <mgba/internal/lr35902/isa-lr35902.h>
 
 void LR35902Init(struct LR35902Core* cpu) {
 	cpu->master->init(cpu, cpu->master);
@@ -156,22 +156,25 @@ void LR35902Tick(struct LR35902Core* cpu) {
 }
 
 void LR35902Run(struct LR35902Core* cpu) {
-	while (true) {
+	bool running = true;
+	while (running || cpu->executionState != LR35902_CORE_FETCH) {
+		if (cpu->cycles >= cpu->nextEvent) {
+			cpu->irqh.processEvents(cpu);
+			break;
+		}
 		_LR35902Step(cpu);
 		if (cpu->cycles + 2 >= cpu->nextEvent) {
 			int32_t diff = cpu->nextEvent - cpu->cycles;
 			cpu->cycles = cpu->nextEvent;
+			cpu->executionState += diff;
 			cpu->irqh.processEvents(cpu);
 			cpu->cycles += 2 - diff;
+			running = false;
 		} else {
 			cpu->cycles += 2;
 		}
 		cpu->executionState = LR35902_CORE_FETCH;
 		cpu->instruction(cpu);
 		++cpu->cycles;
-		if (cpu->cycles >= cpu->nextEvent) {
-			break;
-		}
 	}
-	cpu->irqh.processEvents(cpu);
 }

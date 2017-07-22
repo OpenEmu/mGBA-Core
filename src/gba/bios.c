@@ -3,23 +3,24 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "bios.h"
+#include <mgba/internal/gba/bios.h>
 
-#include "arm/isa-inlines.h"
-#include "arm/macros.h"
-#include "gba/gba.h"
-#include "gba/io.h"
-#include "gba/memory.h"
+#include <mgba/internal/arm/isa-inlines.h>
+#include <mgba/internal/arm/macros.h>
+#include <mgba/internal/gba/gba.h>
+#include <mgba/internal/gba/io.h>
+#include <mgba/internal/gba/memory.h>
 
 const uint32_t GBA_BIOS_CHECKSUM = 0xBAAE187F;
 const uint32_t GBA_DS_BIOS_CHECKSUM = 0xBAAE1880;
 
-mLOG_DEFINE_CATEGORY(GBA_BIOS, "GBA BIOS");
+mLOG_DEFINE_CATEGORY(GBA_BIOS, "GBA BIOS", "gba.bios");
 
 static void _unLz77(struct GBA* gba, int width);
 static void _unHuffman(struct GBA* gba);
 static void _unRl(struct GBA* gba, int width);
 static void _unFilter(struct GBA* gba, int inwidth, int outwidth);
+static void _unBitPack(struct GBA* gba);
 
 static void _SoftReset(struct GBA* gba) {
 	struct ARMCore* cpu = gba->cpu;
@@ -255,22 +256,27 @@ static void _MidiKey2Freq(struct GBA* gba) {
 
 static void _Div(struct GBA* gba, int32_t num, int32_t denom) {
 	struct ARMCore* cpu = gba->cpu;
-	if (denom != 0) {
+	if (denom != 0 && (denom != -1 || num != INT32_MIN)) {
 		div_t result = div(num, denom);
 		cpu->gprs[0] = result.quot;
 		cpu->gprs[1] = result.rem;
 		cpu->gprs[3] = abs(result.quot);
-	} else {
+	} else if (denom == 0) {
 		mLOG(GBA_BIOS, GAME_ERROR, "Attempting to divide %i by zero!", num);
 		// If abs(num) > 1, this should hang, but that would be painful to
 		// emulate in HLE, and no game will get into a state where it hangs...
 		cpu->gprs[0] = (num < 0) ? -1 : 1;
 		cpu->gprs[1] = num;
 		cpu->gprs[3] = 1;
+	} else {
+		mLOG(GBA_BIOS, GAME_ERROR, "Attempting to divide INT_MIN by -1!");
+		cpu->gprs[0] = INT32_MIN;
+		cpu->gprs[1] = 0;
+		cpu->gprs[3] = INT32_MIN;
 	}
 }
 
-static int16_t _ArcTan(int16_t i) {
+static int16_t _ArcTan(int32_t i, int32_t* r1, int32_t* r3) {
 	int32_t a = -((i * i) >> 14);
 	int32_t b = ((0xA9 * a) >> 14) + 0x390;
 	b = ((b * a) >> 14) + 0x91C;
@@ -279,10 +285,16 @@ static int16_t _ArcTan(int16_t i) {
 	b = ((b * a) >> 14) + 0x2081;
 	b = ((b * a) >> 14) + 0x3651;
 	b = ((b * a) >> 14) + 0xA2F9;
+	if (r1) {
+		*r1 = a;
+	}
+	if (r3) {
+		*r3 = b;
+	}
 	return (i * b) >> 16;
 }
 
-static int16_t _ArcTan2(int16_t x, int16_t y) {
+static int16_t _ArcTan2(int32_t x, int32_t y, int32_t* r1) {
 	if (!y) {
 		if (x >= 0) {
 			return 0;
@@ -298,21 +310,21 @@ static int16_t _ArcTan2(int16_t x, int16_t y) {
 	if (y >= 0) {
 		if (x >= 0) {
 			if (x >= y) {
-				return _ArcTan((y << 14)/ x);
+				return _ArcTan((y << 14) / x, r1, NULL);
 			}
 		} else if (-x >= y) {
-			return _ArcTan((y << 14) / x) + 0x8000;
+			return _ArcTan((y << 14) / x, r1, NULL) + 0x8000;
 		}
-		return 0x4000 - _ArcTan((x << 14) / y);
+		return 0x4000 - _ArcTan((x << 14) / y, r1, NULL);
 	} else {
 		if (x <= 0) {
 			if (-x > -y) {
-				return _ArcTan((y << 14) / x) + 0x8000;
+				return _ArcTan((y << 14) / x, r1, NULL) + 0x8000;
 			}
 		} else if (x >= -y) {
-			return _ArcTan((y << 14) / x) + 0x10000;
+			return _ArcTan((y << 14) / x, r1, NULL) + 0x10000;
 		}
-		return 0xC000 - _ArcTan((x << 14) / y);
+		return 0xC000 - _ArcTan((x << 14) / y, r1, NULL);
 	}
 }
 
@@ -355,10 +367,11 @@ void GBASwi16(struct ARMCore* cpu, int immediate) {
 		cpu->gprs[0] = sqrt((uint32_t) cpu->gprs[0]);
 		break;
 	case 0x9:
-		cpu->gprs[0] = (uint16_t) _ArcTan(cpu->gprs[0]);
+		cpu->gprs[0] = _ArcTan(cpu->gprs[0], &cpu->gprs[1], &cpu->gprs[3]);
 		break;
 	case 0xA:
-		cpu->gprs[0] = (uint16_t) _ArcTan2(cpu->gprs[0], cpu->gprs[1]);
+		cpu->gprs[0] = (uint16_t) _ArcTan2(cpu->gprs[0], cpu->gprs[1], &cpu->gprs[1]);
+		cpu->gprs[3] = 0x170;
 		break;
 	case 0xB:
 	case 0xC:
@@ -384,6 +397,22 @@ void GBASwi16(struct ARMCore* cpu, int immediate) {
 		break;
 	case 0xF:
 		_ObjAffineSet(gba);
+		break;
+	case 0x10:
+		if (cpu->gprs[0] < BASE_WORKING_RAM) {
+			mLOG(GBA_BIOS, GAME_ERROR, "Bad BitUnPack source");
+			break;
+		}
+		switch (cpu->gprs[1] >> BASE_OFFSET) {
+		default:
+			mLOG(GBA_BIOS, GAME_ERROR, "Bad BitUnPack destination");
+		// Fall through
+		case REGION_WORKING_RAM:
+		case REGION_WORKING_IRAM:
+		case REGION_VRAM:
+			_unBitPack(gba);
+			break;
+		}
 		break;
 	case 0x11:
 	case 0x12:
@@ -735,4 +764,64 @@ static void _unFilter(struct GBA* gba, int inwidth, int outwidth) {
 	}
 	cpu->gprs[0] = source;
 	cpu->gprs[1] = dest;
+}
+
+static void _unBitPack(struct GBA* gba) {
+	struct ARMCore* cpu = gba->cpu;
+	uint32_t source = cpu->gprs[0];
+	uint32_t dest = cpu->gprs[1];
+	uint32_t info = cpu->gprs[2];
+	unsigned sourceLen = cpu->memory.load16(cpu, info, 0);
+	unsigned sourceWidth = cpu->memory.load8(cpu, info + 2, 0);
+	unsigned destWidth = cpu->memory.load8(cpu, info + 3, 0);
+	switch (sourceWidth) {
+	case 1:
+	case 2:
+	case 4:
+	case 8:
+		break;
+	default:
+		mLOG(GBA_BIOS, GAME_ERROR, "Bad BitUnPack source width: %u", sourceWidth);
+		return;
+	}
+	switch (destWidth) {
+	case 1:
+	case 2:
+	case 4:
+	case 8:
+	case 16:
+	case 32:
+		break;
+	default:
+		mLOG(GBA_BIOS, GAME_ERROR, "Bad BitUnPack destination width: %u", destWidth);
+		return;
+	}
+	uint32_t bias = cpu->memory.load32(cpu, info + 4, 0);
+	uint8_t in = 0;
+	uint32_t out = 0;
+	int bitsRemaining = 0;
+	int bitsEaten = 0;
+	while (sourceLen > 0) {
+		if (!bitsRemaining) {
+			in = cpu->memory.load8(cpu, source, 0);
+			bitsRemaining = 8;
+			++source;
+			--sourceLen;
+		}
+		unsigned scaled = in & ((1 << sourceWidth) - 1);
+		in >>= sourceWidth;
+		if (scaled || bias & 0x80000000) {
+			scaled += bias & 0x7FFFFFFF;
+			scaled &= (1 << destWidth) - 1;
+		}
+		bitsRemaining -= sourceWidth;
+		out |= scaled << bitsEaten;
+		bitsEaten += destWidth;
+		if (bitsEaten == 32) {
+			cpu->memory.store32(cpu, dest, out, 0);
+			bitsEaten = 0;
+			out = 0;
+			dest += 4;
+		}
+	}
 }

@@ -6,13 +6,9 @@
 #ifndef SDL_MAIN_H
 #define SDL_MAIN_H
 
-#ifdef M_CORE_GBA
-#include "gba/renderers/video-software.h"
-#endif
+#include <mgba-util/common.h>
 
-#ifdef M_CORE_GB
-#include "gb/renderers/software.h"
-#endif
+CXX_GUARD_START
 
 #include "sdl-audio.h"
 #include "sdl-events.h"
@@ -69,6 +65,7 @@ struct mSDLRenderer {
 	int ratio;
 
 	bool lockAspectRatio;
+	bool lockIntegerScaling;
 	bool filter;
 
 #ifdef BUILD_GL
@@ -106,4 +103,7 @@ void mSDLGLCreate(struct mSDLRenderer* renderer);
 #if defined(BUILD_GLES2) || defined(USE_EPOXY)
 void mSDLGLES2Create(struct mSDLRenderer* renderer);
 #endif
+
+CXX_GUARD_END
+
 #endif

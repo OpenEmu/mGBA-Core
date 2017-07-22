@@ -5,38 +5,29 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "main.h"
 
-#ifdef USE_CLI_DEBUGGER
-#include "debugger/cli-debugger.h"
-#endif
+#include <mgba/internal/debugger/cli-debugger.h>
 
 #ifdef USE_GDB_STUB
-#include "debugger/gdb-stub.h"
+#include <mgba/internal/debugger/gdb-stub.h>
+#endif
+#ifdef USE_EDITLINE
+#include "feature/editline/cli-el-backend.h"
 #endif
 
-#include "core/core.h"
-#include "core/config.h"
-#include "core/input.h"
-#include "core/thread.h"
-#include "gba/input.h"
-#ifdef M_CORE_GBA
-#include "gba/core.h"
-#include "gba/gba.h"
-#include "gba/video.h"
-#endif
-#ifdef M_CORE_GB
-#include "gb/core.h"
-#include "gb/gb.h"
-#include "gb/video.h"
-#endif
-#include "feature/commandline.h"
-#include "util/configuration.h"
-#include "util/vfs.h"
+#include <mgba/core/cheats.h>
+#include <mgba/core/core.h>
+#include <mgba/core/config.h>
+#include <mgba/core/input.h>
+#include <mgba/core/thread.h>
+#include <mgba/internal/gba/input.h>
+
+#include <mgba/feature/commandline.h>
+#include <mgba-util/vfs.h>
 
 #include <SDL.h>
 
 #include <errno.h>
 #include <signal.h>
-#include <sys/time.h>
 
 #define PORT "sdl"
 
@@ -46,12 +37,13 @@ static void mSDLDeinit(struct mSDLRenderer* renderer);
 static int mSDLRun(struct mSDLRenderer* renderer, struct mArguments* args);
 
 int main(int argc, char** argv) {
-	struct mSDLRenderer renderer = {};
+	struct mSDLRenderer renderer = {0};
 
 	struct mCoreOptions opts = {
 		.useBios = true,
 		.rewindEnable = true,
 		.rewindBufferCapacity = 600,
+		.rewindSave = true,
 		.audioBuffers = 1024,
 		.videoSync = false,
 		.audioSync = true,
@@ -65,7 +57,7 @@ int main(int argc, char** argv) {
 
 	initParserForGraphics(&subparser, &graphicsOpts);
 	bool parsed = parseArguments(&args, argc, argv, &subparser);
-	if (!args.fname) {
+	if (!args.fname && !args.showVersion) {
 		parsed = false;
 	}
 	if (!parsed || args.showHelp) {
@@ -106,6 +98,16 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	struct mCheatDevice* device = NULL;
+	if (args.cheatsFile && (device = renderer.core->cheatDevice(renderer.core))) {
+		struct VFile* vf = VFileOpen(args.cheatsFile, O_RDONLY);
+		if (vf) {
+			mCheatDeviceClear(device);
+			mCheatParseFile(device, vf);
+			vf->close(vf);
+		}
+	}
+
 	mInputMapInit(&renderer.core->inputMap, &GBAInputInfo);
 	mCoreInitConfig(renderer.core, PORT);
 	applyArguments(&args, &subparser, &renderer.core->config);
@@ -123,6 +125,7 @@ int main(int argc, char** argv) {
 #endif
 
 	renderer.lockAspectRatio = renderer.core->opts.lockAspectRatio;
+	renderer.lockIntegerScaling = renderer.core->opts.lockIntegerScaling;
 	renderer.filter = renderer.core->opts.resampleVideo;
 
 	if (!mSDLInit(&renderer)) {
@@ -139,7 +142,7 @@ int main(int argc, char** argv) {
 	mSDLPlayerLoadConfig(&renderer.player, mCoreConfigGetInput(&renderer.core->config));
 
 #if SDL_VERSION_ATLEAST(2, 0, 0)
-	renderer.core->setRumble(renderer.core, &renderer.player.rumble.d);
+	renderer.core->setPeripheral(renderer.core, mPERIPH_RUMBLE, &renderer.player.rumble.d);
 #endif
 
 	int ret;
@@ -148,6 +151,10 @@ int main(int argc, char** argv) {
 	ret = mSDLRun(&renderer, &args);
 	mSDLDetachPlayer(&renderer.events, &renderer.player);
 	mInputMapDeinit(&renderer.core->inputMap);
+
+	if (device) {
+		mCheatDeviceDestroy(device);
+	}
 
 	mSDLDeinit(&renderer);
 
@@ -167,11 +174,19 @@ int mSDLRun(struct mSDLRenderer* renderer, struct mArguments* args) {
 		return 1;
 	}
 	mCoreAutoloadSave(renderer->core);
+#ifdef USE_DEBUGGERS
 	struct mDebugger* debugger = mDebuggerCreate(args->debuggerType, renderer->core);
 	if (debugger) {
+#ifdef USE_EDITLINE
+		if (args->debuggerType == DEBUGGER_CLI) {
+			struct CLIDebugger* cliDebugger = (struct CLIDebugger*) debugger;
+			CLIDebuggerAttachBackend(cliDebugger, CLIDebuggerEditLineBackendCreate());
+		}
+#endif
 		mDebuggerAttach(debugger, renderer->core);
 		mDebuggerEnter(debugger, DEBUGGER_ENTER_MANUAL, NULL);
 	}
+#endif
 
 	if (args->patch) {
 		struct VFile* patch = VFileOpen(args->patch, O_RDONLY);
@@ -185,30 +200,31 @@ int mSDLRun(struct mSDLRenderer* renderer, struct mArguments* args) {
 	renderer->audio.samples = renderer->core->opts.audioBuffers;
 	renderer->audio.sampleRate = 44100;
 
-	bool didFail = !mSDLInitAudio(&renderer->audio, &thread);
+	bool didFail = !mCoreThreadStart(&thread);
 	if (!didFail) {
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 		mSDLSetScreensaverSuspendable(&renderer->events, renderer->core->opts.suspendScreensaver);
 		mSDLSuspendScreensaver(&renderer->events);
 #endif
-		if (mCoreThreadStart(&thread)) {
+		if (mSDLInitAudio(&renderer->audio, &thread)) {
 			renderer->runloop(renderer, &thread);
 			mSDLPauseAudio(&renderer->audio);
-			mCoreThreadJoin(&thread);
+			if (mCoreThreadHasCrashed(&thread)) {
+				didFail = true;
+				printf("The game crashed!\n");
+			}
 		} else {
 			didFail = true;
-			printf("Could not run game. Are you sure the file exists and is a compatible game?\n");
+			printf("Could not initialize audio.\n");
 		}
-
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 		mSDLResumeScreensaver(&renderer->events);
 		mSDLSetScreensaverSuspendable(&renderer->events, false);
 #endif
 
-		if (mCoreThreadHasCrashed(&thread)) {
-			didFail = true;
-			printf("The game crashed!\n");
-		}
+		mCoreThreadJoin(&thread);
+	} else {
+		printf("Could not run game. Are you sure the file exists and is a compatible game?\n");
 	}
 	renderer->core->unloadROM(renderer->core);
 	return didFail;

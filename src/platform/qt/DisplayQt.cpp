@@ -7,17 +7,13 @@
 
 #include <QPainter>
 
-extern "C" {
-#include "core/core.h"
-#include "core/thread.h"
-}
+#include <mgba/core/core.h>
+#include <mgba/core/thread.h>
 
 using namespace QGBA;
 
 DisplayQt::DisplayQt(QWidget* parent)
 	: Display(parent)
-	, m_isDrawing(false)
-	, m_backing(nullptr)
 {
 }
 
@@ -29,6 +25,11 @@ void DisplayQt::startDrawing(mCoreThread* context) {
 
 void DisplayQt::lockAspectRatio(bool lock) {
 	Display::lockAspectRatio(lock);
+	update();
+}
+
+void DisplayQt::lockIntegerScaling(bool lock) {
+	Display::lockIntegerScaling(lock);
 	update();
 }
 
@@ -49,7 +50,8 @@ void DisplayQt::framePosted(const uint32_t* buffer) {
 	m_backing = QImage(reinterpret_cast<const uchar*>(buffer), m_width, m_height, QImage::Format_RGB555);
 #endif
 #else
-	m_backing = QImage(reinterpret_cast<const uchar*>(buffer), m_width, m_height, QImage::Format_RGB32);
+	m_backing = QImage(reinterpret_cast<const uchar*>(buffer), m_width, m_height, QImage::Format_ARGB32);
+	m_backing = m_backing.convertToFormat(QImage::Format_RGB32);
 #endif
 }
 
@@ -67,6 +69,10 @@ void DisplayQt::paintEvent(QPaintEvent*) {
 		} else if (s.width() * m_height < s.height() * m_width) {
 			ds.setHeight(s.width() * m_height / m_width);
 		}
+	}
+	if (isIntegerScalingLocked()) {
+		ds.setWidth(ds.width() - ds.width() % m_width);
+		ds.setHeight(ds.height() - ds.height() % m_height);
 	}
 	QPoint origin = QPoint((s.width() - ds.width()) / 2, (s.height() - ds.height()) / 2);
 	QRect full(origin, ds);

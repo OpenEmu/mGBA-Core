@@ -3,20 +3,21 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "serialize.h"
+#include <mgba/core/serialize.h>
 
-#include "core/core.h"
-#include "core/cheats.h"
-#include "util/memory.h"
-#include "util/vfs.h"
+#include <mgba/core/core.h>
+#include <mgba/core/cheats.h>
+#include <mgba/core/interface.h>
+#include <mgba-util/memory.h>
+#include <mgba-util/vfs.h>
 
 #ifdef USE_PNG
-#include "util/png-io.h"
+#include <mgba-util/png-io.h>
 #include <png.h>
 #include <zlib.h>
 #endif
 
-mLOG_DEFINE_CATEGORY(SAVESTATE, "Savestate");
+mLOG_DEFINE_CATEGORY(SAVESTATE, "Savestate", "core.serialize");
 
 struct mBundledState {
 	size_t stateSize;
@@ -302,6 +303,36 @@ bool mCoreSaveStateNamed(struct mCore* core, struct VFile* vf, int flags) {
 	struct mStateExtdata extdata;
 	mStateExtdataInit(&extdata);
 	size_t stateSize = core->stateSize(core);
+
+	if (flags & SAVESTATE_METADATA) {
+		uint64_t creationUsec;
+#ifndef _MSC_VER
+		struct timeval tv;
+		if (!gettimeofday(&tv, 0)) {
+			uint64_t usec = tv.tv_usec;
+			usec += tv.tv_sec * 1000000LL;
+			STORE_64LE(usec, 0, &creationUsec);
+		}
+#else
+		struct timespec ts;
+		if (timespec_get(&ts, TIME_UTC)) {
+			uint64_t usec = ts.tv_nsec / 1000;
+			usec += ts.tv_sec * 1000000LL;
+			STORE_64LE(usec, 0, &creationUsec);
+		}
+#endif
+		else {
+			creationUsec = 0;
+		}
+
+		struct mStateExtdataItem item = {
+			.size = sizeof(creationUsec),
+			.data = &creationUsec,
+			.clean = NULL
+		};
+		mStateExtdataPut(&extdata, EXTDATA_META_TIME, &item);
+	}
+
 	if (flags & SAVESTATE_SAVEDATA) {
 		void* sram = NULL;
 		size_t size = core->savedataClone(core, &sram);
@@ -326,6 +357,14 @@ bool mCoreSaveStateNamed(struct mCore* core, struct VFile* vf, int flags) {
 				.clean = 0
 			};
 			mStateExtdataPut(&extdata, EXTDATA_CHEATS, &item);
+		}
+	}
+	if (flags & SAVESTATE_RTC) {
+		mLOG(SAVESTATE, INFO, "Loading RTC");
+		struct mStateExtdataItem item;
+		if (core->rtc.d.serialize) {
+			core->rtc.d.serialize(&core->rtc.d, &item);
+			mStateExtdataPut(&extdata, EXTDATA_RTC, &item);
 		}
 	}
 #ifdef USE_PNG
@@ -423,6 +462,12 @@ bool mCoreLoadStateNamed(struct mCore* core, struct VFile* vf, int flags) {
 				mCheatParseFile(device, svf);
 				svf->close(svf);
 			}
+		}
+	}
+	if (flags & SAVESTATE_RTC && mStateExtdataGet(&extdata, EXTDATA_RTC, &item)) {
+		mLOG(SAVESTATE, INFO, "Loading RTC");
+		if (core->rtc.d.deserialize) {
+			core->rtc.d.deserialize(&core->rtc.d, &item);
 		}
 	}
 	mStateExtdataDeinit(&extdata);

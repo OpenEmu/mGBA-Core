@@ -7,15 +7,12 @@
 
 #include "LogController.h"
 
-extern "C" {
-#include "core/thread.h"
-}
+#include <mgba/core/thread.h>
 
 using namespace QGBA;
 
 AudioProcessorSDL::AudioProcessorSDL(QObject* parent)
 	: AudioProcessor(parent)
-	, m_audio{ 2048, 44100 }
 {
 }
 

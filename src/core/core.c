@@ -3,22 +3,26 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "core.h"
+#include <mgba/core/core.h>
 
-#include "core/log.h"
-#include "core/serialize.h"
-#include "util/vfs.h"
+#include <mgba/core/log.h>
+#include <mgba/core/serialize.h>
+#include <mgba-util/vfs.h>
 
 #ifdef M_CORE_GB
-#include "gb/core.h"
-#include "gb/gb.h"
+#include <mgba/gb/core.h>
+// TODO: Fix layering violation
+#include <mgba/internal/gb/gb.h>
 #endif
 #ifdef M_CORE_GBA
-#include "gba/core.h"
-#include "gba/gba.h"
+#include <mgba/gba/core.h>
+#include <mgba/internal/gba/gba.h>
+#endif
+#ifndef MINIMAL_CORE
+#include <mgba/feature/video-logger.h>
 #endif
 
-static struct mCoreFilter {
+static const struct mCoreFilter {
 	bool (*filter)(struct VFile*);
 	struct mCore* (*open)(void);
 	enum mPlatform platform;
@@ -36,7 +40,7 @@ struct mCore* mCoreFindVF(struct VFile* vf) {
 	if (!vf) {
 		return NULL;
 	}
-	struct mCoreFilter* filter;
+	const struct mCoreFilter* filter;
 	for (filter = &_filters[0]; filter->filter; ++filter) {
 		if (filter->filter(vf)) {
 			break;
@@ -45,6 +49,9 @@ struct mCore* mCoreFindVF(struct VFile* vf) {
 	if (filter->open) {
 		return filter->open();
 	}
+#ifndef MINIMAL_CORE
+	return mVideoLogCoreFind(vf);
+#endif
 	return NULL;
 }
 
@@ -52,7 +59,7 @@ enum mPlatform mCoreIsCompatible(struct VFile* vf) {
 	if (!vf) {
 		return false;
 	}
-	struct mCoreFilter* filter;
+	const struct mCoreFilter* filter;
 	for (filter = &_filters[0]; filter->filter; ++filter) {
 		if (filter->filter(vf)) {
 			return filter->platform;
@@ -62,7 +69,7 @@ enum mPlatform mCoreIsCompatible(struct VFile* vf) {
 }
 
 #if !defined(MINIMAL_CORE) || MINIMAL_CORE < 2
-#include "util/png-io.h"
+#include <mgba-util/png-io.h>
 
 #ifdef PSP2
 #include <psp2/photoexport.h>
@@ -114,6 +121,35 @@ bool mCoreLoadFile(struct mCore* core, const char* path) {
 	return ret;
 }
 
+bool mCorePreloadVF(struct mCore* core, struct VFile* vf) {
+	struct VFile* vfm = VFileMemChunk(NULL, vf->size(vf));
+	uint8_t buffer[2048];
+	ssize_t read;
+	vf->seek(vf, 0, SEEK_SET);
+	while ((read = vf->read(vf, buffer, sizeof(buffer))) > 0) {
+		vfm->write(vfm, buffer, read);
+	}
+	vf->close(vf);
+	bool ret = core->loadROM(core, vfm);
+	if (!ret) {
+		vfm->close(vfm);
+	}
+	return ret;
+}
+
+bool mCorePreloadFile(struct mCore* core, const char* path) {
+	struct VFile* rom = mDirectorySetOpenPath(&core->dirs, path, core->isROM);
+	if (!rom) {
+		return false;
+	}
+
+	bool ret = mCorePreloadVF(core, rom);
+	if (!ret) {
+		rom->close(rom);
+	}
+	return ret;
+}
+
 bool mCoreAutoloadSave(struct mCore* core) {
 	return core->loadSave(core, mDirectorySetOpenSuffix(&core->dirs, core->dirs.save, ".sav", O_CREAT | O_RDWR));
 }
@@ -150,7 +186,7 @@ bool mCoreLoadState(struct mCore* core, int slot, int flags) {
 	if (success) {
 		mLOG(STATUS, INFO, "State %i loaded", slot);
 	} else {
-		mLOG(STATUS, INFO, "State %i failed to loaded", slot);
+		mLOG(STATUS, INFO, "State %i failed to load", slot);
 	}
 
 	return success;
@@ -231,4 +267,9 @@ void mCoreLoadForeignConfig(struct mCore* core, const struct mCoreConfig* config
 		core->setAudioBufferSize(core, core->opts.audioBuffers);
 	}
 	core->loadConfig(core, config);
+}
+
+void mCoreSetRTC(struct mCore* core, struct mRTCSource* rtc) {
+	core->rtc.custom = rtc;
+	core->rtc.override = RTC_CUSTOM_START;
 }

@@ -6,6 +6,7 @@
 #include "GBAApp.h"
 
 #include "AudioProcessor.h"
+#include "ConfigController.h"
 #include "Display.h"
 #include "GameController.h"
 #include "Window.h"
@@ -14,25 +15,24 @@
 #include <QFileInfo>
 #include <QFileOpenEvent>
 #include <QIcon>
-#include <QTranslator>
 
-extern "C" {
-#include "core/version.h"
-#include "feature/commandline.h"
-#include "util/nointro.h"
-#include "util/socket.h"
-}
+#include <mgba/core/version.h>
+#include <mgba-util/socket.h>
+#include <mgba-util/vfs.h>
+
+#ifdef USE_SQLITE3
+#include "feature/sqlite3/no-intro.h"
+#endif
 
 using namespace QGBA;
 
 static GBAApp* g_app = nullptr;
 
-mLOG_DEFINE_CATEGORY(QT, "Qt");
+mLOG_DEFINE_CATEGORY(QT, "Qt", "platform.qt");
 
-GBAApp::GBAApp(int& argc, char* argv[])
+GBAApp::GBAApp(int& argc, char* argv[], ConfigController* config)
 	: QApplication(argc, argv)
-	, m_windows{}
-	, m_db(nullptr)
+	, m_configController(config)
 {
 	g_app = this;
 
@@ -41,14 +41,8 @@ GBAApp::GBAApp(int& argc, char* argv[])
 #endif
 
 #ifndef Q_OS_MAC
-	setWindowIcon(QIcon(":/res/mgba-1024.png"));
+	setWindowIcon(QIcon(":/res/mgba-512.png"));
 #endif
-
-	QTranslator* translator = new QTranslator(this);
-	if (translator->load(QLocale(), QLatin1String(binaryName), QLatin1String("-"), QLatin1String(":/translations"))) {
-		installTranslator(translator);
-	}
-
 
 	SocketSubsystemInit();
 	qRegisterMetaType<const uint32_t*>("const uint32_t*");
@@ -57,50 +51,22 @@ GBAApp::GBAApp(int& argc, char* argv[])
 	QApplication::setApplicationName(projectName);
 	QApplication::setApplicationVersion(projectVersion);
 
-	if (!m_configController.getQtOption("displayDriver").isNull()) {
-		Display::setDriver(static_cast<Display::Driver>(m_configController.getQtOption("displayDriver").toInt()));
-	}
-
-	mArguments args;
-	mGraphicsOpts graphicsOpts;
-	mSubParser subparser;
-	initParserForGraphics(&subparser, &graphicsOpts);
-	bool loaded = m_configController.parseArguments(&args, argc, argv, &subparser);
-	if (loaded && args.showHelp) {
-		usage(argv[0], subparser.usage);
-		::exit(0);
-		return;
+	if (!m_configController->getQtOption("displayDriver").isNull()) {
+		Display::setDriver(static_cast<Display::Driver>(m_configController->getQtOption("displayDriver").toInt()));
 	}
 
 	reloadGameDB();
 
-	if (!m_configController.getQtOption("audioDriver").isNull()) {
-		AudioProcessor::setDriver(static_cast<AudioProcessor::Driver>(m_configController.getQtOption("audioDriver").toInt()));
+	if (!m_configController->getQtOption("audioDriver").isNull()) {
+		AudioProcessor::setDriver(static_cast<AudioProcessor::Driver>(m_configController->getQtOption("audioDriver").toInt()));
 	}
-	Window* w = new Window(&m_configController);
-	connect(w, &Window::destroyed, [this]() {
-		m_windows[0] = nullptr;
-	});
-	m_windows[0] = w;
+}
 
-	if (loaded) {
-		w->argumentsPassed(&args);
-	} else {
-		w->loadConfig();
-	}
-	freeArguments(&args);
-
-	if (graphicsOpts.multiplier) {
-		w->resizeFrame(QSize(VIDEO_HORIZONTAL_PIXELS * graphicsOpts.multiplier, VIDEO_VERTICAL_PIXELS * graphicsOpts.multiplier));
-	}
-	if (graphicsOpts.fullscreen) {
-		w->enterFullScreen();
-	}
-
-	w->show();
-
-	w->controller()->setMultiplayerController(&m_multiplayer);
-	w->multiplayerChanged();
+GBAApp::~GBAApp() {
+#ifdef USE_SQLITE3
+	m_parseThread.quit();
+	m_parseThread.wait();
+#endif
 }
 
 bool GBAApp::event(QEvent* event) {
@@ -112,20 +78,26 @@ bool GBAApp::event(QEvent* event) {
 }
 
 Window* GBAApp::newWindow() {
-	if (m_multiplayer.attached() >= MAX_GBAS) {
+	if (m_windows.count() >= MAX_GBAS) {
 		return nullptr;
 	}
-	Window* w = new Window(&m_configController, m_multiplayer.attached());
+	Window* w = new Window(m_configController, m_multiplayer.attached());
 	int windowId = m_multiplayer.attached();
-	connect(w, &Window::destroyed, [this, windowId]() {
-		m_windows[windowId] = nullptr;
+	connect(w, &Window::destroyed, [this, w]() {
+		m_windows.removeAll(w);
+		for (Window* w : m_windows) {
+			w->updateMultiplayerStatus(m_windows.count() < MAX_GBAS);
+		}
 	});
-	m_windows[windowId] = w;
+	m_windows.append(w);
 	w->setAttribute(Qt::WA_DeleteOnClose);
 	w->loadConfig();
 	w->show();
 	w->controller()->setMultiplayerController(&m_multiplayer);
 	w->multiplayerChanged();
+	for (Window* w : m_windows) {
+		w->updateMultiplayerStatus(m_windows.count() < MAX_GBAS);
+	}
 	return w;
 }
 
@@ -133,65 +105,53 @@ GBAApp* GBAApp::app() {
 	return g_app;
 }
 
-void GBAApp::pauseAll(QList<int>* paused) {
-	for (int i = 0; i < MAX_GBAS; ++i) {
-		if (!m_windows[i] || !m_windows[i]->controller()->isLoaded() || m_windows[i]->controller()->isPaused()) {
+void GBAApp::pauseAll(QList<Window*>* paused) {
+	for (auto& window : m_windows) {
+		if (!window->controller()->isLoaded() || window->controller()->isPaused()) {
 			continue;
 		}
-		m_windows[i]->controller()->setPaused(true);
-		paused->append(i);
+		window->controller()->setPaused(true);
+		paused->append(window);
 	}
 }
 
-void GBAApp::continueAll(const QList<int>* paused) {
-	for (int i : *paused) {
-		m_windows[i]->controller()->setPaused(false);
+void GBAApp::continueAll(const QList<Window*>& paused) {
+	for (auto& window : paused) {
+		window->controller()->setPaused(false);
 	}
 }
 
 QString GBAApp::getOpenFileName(QWidget* owner, const QString& title, const QString& filter) {
-	QList<int> paused;
+	QList<Window*> paused;
 	pauseAll(&paused);
-	QString filename = QFileDialog::getOpenFileName(owner, title, m_configController.getQtOption("lastDirectory").toString(), filter);
-	continueAll(&paused);
+	QString filename = QFileDialog::getOpenFileName(owner, title, m_configController->getOption("lastDirectory"), filter);
+	continueAll(paused);
 	if (!filename.isEmpty()) {
-		m_configController.setQtOption("lastDirectory", QFileInfo(filename).dir().path());
+		m_configController->setOption("lastDirectory", QFileInfo(filename).dir().canonicalPath());
 	}
 	return filename;
 }
 
 QString GBAApp::getSaveFileName(QWidget* owner, const QString& title, const QString& filter) {
-	QList<int> paused;
+	QList<Window*> paused;
 	pauseAll(&paused);
-	QString filename = QFileDialog::getSaveFileName(owner, title, m_configController.getQtOption("lastDirectory").toString(), filter);
-	continueAll(&paused);
+	QString filename = QFileDialog::getSaveFileName(owner, title, m_configController->getOption("lastDirectory"), filter);
+	continueAll(paused);
 	if (!filename.isEmpty()) {
-		m_configController.setQtOption("lastDirectory", QFileInfo(filename).dir().path());
+		m_configController->setOption("lastDirectory", QFileInfo(filename).dir().canonicalPath());
 	}
 	return filename;
 }
 
 QString GBAApp::getOpenDirectoryName(QWidget* owner, const QString& title) {
-	QList<int> paused;
+	QList<Window*> paused;
 	pauseAll(&paused);
-	QString filename = QFileDialog::getExistingDirectory(owner, title, m_configController.getQtOption("lastDirectory").toString());
-	continueAll(&paused);
+	QString filename = QFileDialog::getExistingDirectory(owner, title, m_configController->getOption("lastDirectory"));
+	continueAll(paused);
 	if (!filename.isEmpty()) {
-		m_configController.setQtOption("lastDirectory", QFileInfo(filename).dir().path());
+		m_configController->setOption("lastDirectory", QFileInfo(filename).dir().canonicalPath());
 	}
 	return filename;
-}
-
-QFileDialog* GBAApp::getOpenFileDialog(QWidget* owner, const QString& title, const QString& filter) {
-	FileDialog* dialog = new FileDialog(this, owner, title, filter);
-	dialog->setAcceptMode(QFileDialog::AcceptOpen);
-	return dialog;
-}
-
-QFileDialog* GBAApp::getSaveFileDialog(QWidget* owner, const QString& title, const QString& filter) {
-	FileDialog* dialog = new FileDialog(this, owner, title, filter);
-	dialog->setAcceptMode(QFileDialog::AcceptSave);
-	return dialog;
 }
 
 QString GBAApp::dataDir() {
@@ -206,37 +166,47 @@ QString GBAApp::dataDir() {
 	return path;
 }
 
+#ifdef USE_SQLITE3
 bool GBAApp::reloadGameDB() {
 	NoIntroDB* db = nullptr;
-	VFile* vf = VFileDevice::open(dataDir() + "/nointro.dat", O_RDONLY);
-	if (vf) {
-		db = NoIntroDBLoad(vf);
-		vf->close(vf);
-	}
+	db = NoIntroDBLoad((ConfigController::configDir() + "/nointro.sqlite3").toUtf8().constData());
 	if (db && m_db) {
 		NoIntroDBDestroy(m_db);
 	}
 	if (db) {
+		if (m_parseThread.isRunning()) {
+			m_parseThread.quit();
+			m_parseThread.wait();
+		}
+		GameDBParser* parser = new GameDBParser(db);
+		m_parseThread.start();
+		parser->moveToThread(&m_parseThread);
+		QMetaObject::invokeMethod(parser, "parseNoIntroDB");
 		m_db = db;
 		return true;
 	}
 	return false;
 }
+#else
+bool GBAApp::reloadGameDB() {
+	return false;
+}
+#endif
 
-GBAApp::FileDialog::FileDialog(GBAApp* app, QWidget* parent, const QString& caption, const QString& filter)
-	: QFileDialog(parent, caption, app->m_configController.getQtOption("lastDirectory").toString(), filter)
-	, m_app(app)
+#ifdef USE_SQLITE3
+GameDBParser::GameDBParser(NoIntroDB* db, QObject* parent)
+	: QObject(parent)
+	, m_db(db)
 {
+	// Nothing to do
 }
 
-int GBAApp::FileDialog::exec() {
-	QList<int> paused;
-	m_app->pauseAll(&paused);
-	bool didAccept = QFileDialog::exec() == QDialog::Accepted;
-	QStringList filenames = selectedFiles();
-	if (!filenames.isEmpty()) {
-		m_app->m_configController.setQtOption("lastDirectory", QFileInfo(filenames[0]).dir().path());
+void GameDBParser::parseNoIntroDB() {
+	VFile* vf = VFileDevice::open(GBAApp::dataDir() + "/nointro.dat", O_RDONLY);
+	if (vf) {
+		NoIntroDBLoadClrMamePro(m_db, vf);
+		vf->close(vf);
 	}
-	m_app->continueAll(&paused);
-	return didAccept;
 }
+
+#endif

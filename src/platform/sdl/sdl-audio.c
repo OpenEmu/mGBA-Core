@@ -5,14 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "sdl-audio.h"
 
-#include "core/thread.h"
-#include "gba/gba.h"
+#include <mgba/core/core.h>
+#include <mgba/core/thread.h>
+#include <mgba/internal/gba/audio.h>
+#include <mgba/internal/gba/gba.h>
 
-#include "third-party/blip_buf/blip_buf.h"
+#include <mgba/core/blip_buf.h>
 
 #define BUFFER_SIZE (GBA_AUDIO_SAMPLES >> 2)
 
-mLOG_DEFINE_CATEGORY(SDL_AUDIO, "SDL Audio");
+mLOG_DEFINE_CATEGORY(SDL_AUDIO, "SDL Audio", "platform.sdl.audio");
 
 static void _mSDLAudioCallback(void* context, Uint8* data, int len);
 
@@ -38,7 +40,6 @@ bool mSDLInitAudio(struct mSDLAudio* context, struct mCoreThread* threadContext)
 		mLOG(SDL_AUDIO, ERROR, "Could not open SDL sound system");
 		return false;
 	}
-	context->samples = context->obtainedSpec.samples;
 	context->core = 0;
 
 	if (threadContext) {

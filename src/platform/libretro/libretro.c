@@ -5,24 +5,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "libretro.h"
 
-#include "util/common.h"
+#include <mgba-util/common.h>
 
-#include "core/core.h"
-#include "core/version.h"
+#include <mgba/core/blip_buf.h>
+#include <mgba/core/cheats.h>
+#include <mgba/core/core.h>
+#include <mgba/core/version.h>
 #ifdef M_CORE_GB
-#include "gb/core.h"
-#include "gb/gb.h"
+#include <mgba/gb/core.h>
+#include <mgba/internal/gb/gb.h>
 #endif
 #ifdef M_CORE_GBA
-#include "gba/bios.h"
-#include "gba/core.h"
-#include "gba/cheats.h"
-#include "gba/core.h"
-#include "gba/serialize.h"
+#include <mgba/gba/core.h>
+#include <mgba/gba/interface.h>
+#include <mgba/internal/gba/gba.h>
 #endif
-#include "util/circle-buffer.h"
-#include "util/memory.h"
-#include "util/vfs.h"
+#include <mgba-util/circle-buffer.h>
+#include <mgba-util/memory.h>
+#include <mgba-util/vfs.h>
 
 #define SAMPLES 1024
 #define RUMBLE_PWM 35
@@ -398,7 +398,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	blip_set_rates(core->getAudioChannel(core, 0), core->frequency(core), 32768);
 	blip_set_rates(core->getAudioChannel(core, 1), core->frequency(core), 32768);
 
-	core->setRumble(core, &rumble);
+	core->setPeripheral(core, mPERIPH_RUMBLE, &rumble);
 
 	savedata = anonymousMemoryMap(SIZE_CART_FLASH1M);
 	struct VFile* save = VFileFromMemory(savedata, SIZE_CART_FLASH1M);
@@ -409,8 +409,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 
 #ifdef M_CORE_GBA
 	if (core->platform(core) == PLATFORM_GBA) {
-		struct GBA* gba = core->board;
-		gba->luminanceSource = &lux;
+		core->setPeripheral(core, mPERIPH_GBA_LUMINANCE, &lux);
 
 		const char* sysDir = 0;
 		if (core->opts.useBios && environCallback(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &sysDir)) {
@@ -524,19 +523,28 @@ size_t retro_get_memory_size(unsigned id) {
 	if (id != RETRO_MEMORY_SAVE_RAM) {
 		return 0;
 	}
-	switch (((struct GBA*) core->board)->memory.savedata.type) {
-	case SAVEDATA_AUTODETECT:
-	case SAVEDATA_FLASH1M:
-		return SIZE_CART_FLASH1M;
-	case SAVEDATA_FLASH512:
-		return SIZE_CART_FLASH512;
-	case SAVEDATA_EEPROM:
-		return SIZE_CART_EEPROM;
-	case SAVEDATA_SRAM:
-		return SIZE_CART_SRAM;
-	case SAVEDATA_FORCE_NONE:
-		return 0;
+#ifdef M_CORE_GBA
+	if (core->platform(core) == PLATFORM_GBA) {
+		switch (((struct GBA*) core->board)->memory.savedata.type) {
+		case SAVEDATA_AUTODETECT:
+		case SAVEDATA_FLASH1M:
+			return SIZE_CART_FLASH1M;
+		case SAVEDATA_FLASH512:
+			return SIZE_CART_FLASH512;
+		case SAVEDATA_EEPROM:
+			return SIZE_CART_EEPROM;
+		case SAVEDATA_SRAM:
+			return SIZE_CART_SRAM;
+		case SAVEDATA_FORCE_NONE:
+			return 0;
+		}
 	}
+#endif
+#ifdef M_CORE_GB
+	if (core->platform(core) == PLATFORM_GB) {
+		return ((struct GB*) core->board)->sramSize;
+	}
+#endif
 	return 0;
 }
 

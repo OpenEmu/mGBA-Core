@@ -13,9 +13,7 @@ using namespace QGBA;
 
 TilePainter::TilePainter(QWidget* parent)
 	: QWidget(parent)
-	, m_size(8)
 {
-	m_backing = QPixmap(256, 768);
 	m_backing.fill(Qt::transparent);
 	resize(256, 768);
 	setTileCount(3072);
@@ -55,10 +53,13 @@ void TilePainter::setTile(int index, const uint16_t* data) {
 
 void TilePainter::setTileCount(int tiles) {
 	m_tileCount = tiles;
-	int w = width() / m_size;
-	int h = (tiles + w - 1) * m_size / w;
-	setMinimumSize(16, h - (h % m_size));
-	resizeEvent(nullptr);
+	if (sizePolicy().horizontalPolicy() != QSizePolicy::Fixed) {
+		// Only manage the size ourselves if we don't appear to have something else managing it
+		int w = width() / m_size;
+		int h = (tiles + w - 1) * m_size / w;
+		setMinimumSize(m_size, h - (h % m_size));
+		resizeEvent(nullptr);
+	}
 }
 
 void TilePainter::setTileMagnification(int mag) {

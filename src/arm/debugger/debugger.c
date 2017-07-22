@@ -3,12 +3,13 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "debugger.h"
+#include <mgba/internal/arm/debugger/debugger.h>
 
-#include "arm/arm.h"
-#include "arm/isa-inlines.h"
-#include "arm/debugger/memory-debugger.h"
-#include "core/core.h"
+#include <mgba/core/core.h>
+#include <mgba/internal/arm/arm.h>
+#include <mgba/internal/arm/decoder.h>
+#include <mgba/internal/arm/isa-inlines.h>
+#include <mgba/internal/arm/debugger/memory-debugger.h>
 
 DEFINE_VECTOR(ARMDebugBreakpointList, struct ARMDebugBreakpoint);
 DEFINE_VECTOR(ARMDebugWatchpointList, struct ARMDebugWatchpoint);
@@ -48,12 +49,13 @@ static void ARMDebuggerDeinit(struct mDebuggerPlatform* platform);
 
 static void ARMDebuggerEnter(struct mDebuggerPlatform* d, enum mDebuggerEntryReason reason, struct mDebuggerEntryInfo* info);
 
-static void ARMDebuggerSetBreakpoint(struct mDebuggerPlatform*, uint32_t address);
-static void ARMDebuggerClearBreakpoint(struct mDebuggerPlatform*, uint32_t address);
-static void ARMDebuggerSetWatchpoint(struct mDebuggerPlatform*, uint32_t address, enum mWatchpointType type);
-static void ARMDebuggerClearWatchpoint(struct mDebuggerPlatform*, uint32_t address);
+static void ARMDebuggerSetBreakpoint(struct mDebuggerPlatform*, uint32_t address, int segment);
+static void ARMDebuggerClearBreakpoint(struct mDebuggerPlatform*, uint32_t address, int segment);
+static void ARMDebuggerSetWatchpoint(struct mDebuggerPlatform*, uint32_t address, int segment, enum mWatchpointType type);
+static void ARMDebuggerClearWatchpoint(struct mDebuggerPlatform*, uint32_t address, int segment);
 static void ARMDebuggerCheckBreakpoints(struct mDebuggerPlatform*);
 static bool ARMDebuggerHasBreakpoints(struct mDebuggerPlatform*);
+static void ARMDebuggerTrace(struct mDebuggerPlatform*, char* out, size_t* length);
 
 struct mDebuggerPlatform* ARMDebuggerPlatformCreate(void) {
 	struct mDebuggerPlatform* platform = (struct mDebuggerPlatform*) malloc(sizeof(struct ARMDebugger));
@@ -66,6 +68,7 @@ struct mDebuggerPlatform* ARMDebuggerPlatformCreate(void) {
 	platform->clearWatchpoint = ARMDebuggerClearWatchpoint;
 	platform->checkBreakpoints = ARMDebuggerCheckBreakpoints;
 	platform->hasBreakpoints = ARMDebuggerHasBreakpoints;
+	platform->trace = ARMDebuggerTrace;
 	return platform;
 }
 
@@ -157,14 +160,16 @@ void ARMDebuggerClearSoftwareBreakpoint(struct mDebuggerPlatform* d, uint32_t ad
 	}
 }
 
-static void ARMDebuggerSetBreakpoint(struct mDebuggerPlatform* d, uint32_t address) {
+static void ARMDebuggerSetBreakpoint(struct mDebuggerPlatform* d, uint32_t address, int segment) {
+	UNUSED(segment);
 	struct ARMDebugger* debugger = (struct ARMDebugger*) d;
 	struct ARMDebugBreakpoint* breakpoint = ARMDebugBreakpointListAppend(&debugger->breakpoints);
 	breakpoint->address = address;
 	breakpoint->isSw = false;
 }
 
-static void ARMDebuggerClearBreakpoint(struct mDebuggerPlatform* d, uint32_t address) {
+static void ARMDebuggerClearBreakpoint(struct mDebuggerPlatform* d, uint32_t address, int segment) {
+	UNUSED(segment);
 	struct ARMDebugger* debugger = (struct ARMDebugger*) d;
 	struct ARMDebugBreakpointList* breakpoints = &debugger->breakpoints;
 	size_t i;
@@ -180,7 +185,8 @@ static bool ARMDebuggerHasBreakpoints(struct mDebuggerPlatform* d) {
 	return ARMDebugBreakpointListSize(&debugger->breakpoints) || ARMDebugWatchpointListSize(&debugger->watchpoints);
 }
 
-static void ARMDebuggerSetWatchpoint(struct mDebuggerPlatform* d, uint32_t address, enum mWatchpointType type) {
+static void ARMDebuggerSetWatchpoint(struct mDebuggerPlatform* d, uint32_t address, int segment, enum mWatchpointType type) {
+	UNUSED(segment);
 	struct ARMDebugger* debugger = (struct ARMDebugger*) d;
 	if (!ARMDebugWatchpointListSize(&debugger->watchpoints)) {
 		ARMDebuggerInstallMemoryShim(debugger);
@@ -190,7 +196,8 @@ static void ARMDebuggerSetWatchpoint(struct mDebuggerPlatform* d, uint32_t addre
 	watchpoint->type = type;
 }
 
-static void ARMDebuggerClearWatchpoint(struct mDebuggerPlatform* d, uint32_t address) {
+static void ARMDebuggerClearWatchpoint(struct mDebuggerPlatform* d, uint32_t address, int segment) {
+	UNUSED(segment);
 	struct ARMDebugger* debugger = (struct ARMDebugger*) d;
 	struct ARMDebugWatchpointList* watchpoints = &debugger->watchpoints;
 	size_t i;
@@ -202,4 +209,40 @@ static void ARMDebuggerClearWatchpoint(struct mDebuggerPlatform* d, uint32_t add
 	if (!ARMDebugWatchpointListSize(&debugger->watchpoints)) {
 		ARMDebuggerRemoveMemoryShim(debugger);
 	}
+}
+
+static void ARMDebuggerTrace(struct mDebuggerPlatform* d, char* out, size_t* length) {
+	struct ARMDebugger* debugger = (struct ARMDebugger*) d;
+	struct ARMCore* cpu = debugger->cpu;
+
+	char disassembly[64];
+
+	struct ARMInstructionInfo info;
+	if (cpu->executionMode == MODE_ARM) {
+		uint32_t instruction = cpu->prefetch[0];
+		sprintf(disassembly, "%08X: ", instruction);
+		ARMDecodeARM(instruction, &info);
+		ARMDisassemble(&info, cpu->gprs[ARM_PC], disassembly + strlen("00000000: "), sizeof(disassembly) - strlen("00000000: "));
+	} else {
+		struct ARMInstructionInfo info2;
+		struct ARMInstructionInfo combined;
+		uint16_t instruction = cpu->prefetch[0];
+		uint16_t instruction2 = cpu->prefetch[1];
+		ARMDecodeThumb(instruction, &info);
+		ARMDecodeThumb(instruction2, &info2);
+		if (ARMDecodeThumbCombine(&info, &info2, &combined)) {
+			sprintf(disassembly, "%04X%04X: ", instruction, instruction2);
+			ARMDisassemble(&combined, cpu->gprs[ARM_PC], disassembly + strlen("00000000: "), sizeof(disassembly) - strlen("00000000: "));
+		} else {
+			sprintf(disassembly, "    %04X: ", instruction);
+			ARMDisassemble(&info, cpu->gprs[ARM_PC], disassembly + strlen("00000000: "), sizeof(disassembly) - strlen("00000000: "));
+		}
+	}
+
+	*length = snprintf(out, *length, "%08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X cpsr: %08X | %s",
+		               cpu->gprs[0],  cpu->gprs[1],  cpu->gprs[2],  cpu->gprs[3],
+		               cpu->gprs[4],  cpu->gprs[5],  cpu->gprs[6],  cpu->gprs[7],
+		               cpu->gprs[8],  cpu->gprs[9],  cpu->gprs[10], cpu->gprs[11],
+		               cpu->gprs[12], cpu->gprs[13], cpu->gprs[14], cpu->gprs[15],
+		               cpu->cpsr.packed, disassembly);
 }

@@ -3,9 +3,9 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "util/vfs.h"
+#include <mgba-util/vfs.h>
 
-#include "util/string.h"
+#include <mgba-util/string.h>
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -147,7 +147,7 @@ const char* _vdeName(struct VDirEntry* vde) {
 
 static enum VFSType _vdeType(struct VDirEntry* vde) {
 	struct VDirEntryDE* vdede = (struct VDirEntryDE*) vde;
-#ifndef WIN32
+#if !defined(WIN32) && !defined(__HAIKU__)
 	if (vdede->ent->d_type == DT_DIR) {
 		return VFS_DIRECTORY;
 	}

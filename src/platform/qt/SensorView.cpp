@@ -9,10 +9,8 @@
 #include "GamepadAxisEvent.h"
 #include "InputController.h"
 
-extern "C" {
-#include "core/core.h"
-#include "gba/gba.h"
-}
+#include <mgba/core/core.h>
+#include <mgba/internal/gba/gba.h>
 
 using namespace QGBA;
 
@@ -24,10 +22,11 @@ SensorView::SensorView(GameController* controller, InputController* input, QWidg
  {
 	m_ui.setupUi(this);
 
-	connect(m_ui.lightSpin, SIGNAL(valueChanged(int)), this, SLOT(setLuminanceValue(int)));
-	connect(m_ui.lightSlide, SIGNAL(valueChanged(int)), this, SLOT(setLuminanceValue(int)));
+	connect(m_ui.lightSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged),
+	        this, &SensorView::setLuminanceValue);
+	connect(m_ui.lightSlide, &QAbstractSlider::valueChanged, this, &SensorView::setLuminanceValue);
 
-	connect(m_ui.timeNoOverride, SIGNAL(clicked()), controller, SLOT(setRealTime()));
+	connect(m_ui.timeNoOverride, &QAbstractButton::clicked, controller, &GameController::setRealTime);
 	connect(m_ui.timeFixed, &QRadioButton::clicked, [controller, this] () {
 		controller->setFixedTime(m_ui.time->dateTime());
 	});
@@ -41,10 +40,10 @@ SensorView::SensorView(GameController* controller, InputController* input, QWidg
 		m_ui.time->setDateTime(QDateTime::currentDateTime());
 	});
 
-	connect(m_controller, SIGNAL(luminanceValueChanged(int)), this, SLOT(luminanceValueChanged(int)));
+	connect(m_controller, &GameController::luminanceValueChanged, this, &SensorView::luminanceValueChanged);
 
 	m_timer.setInterval(2);
-	connect(&m_timer, SIGNAL(timeout()), this, SLOT(updateSensors()));
+	connect(&m_timer, &QTimer::timeout, this, &SensorView::updateSensors);
 	if (!m_rotation || !m_rotation->readTiltX || !m_rotation->readTiltY) {
 		m_ui.tilt->hide();
 	} else {
@@ -108,7 +107,7 @@ bool SensorView::eventFilter(QObject*, QEvent* event) {
 }
 
 void SensorView::updateSensors() {
-	m_controller->threadInterrupt();
+	GameController::Interrupter interrupter(m_controller);
 	if (m_rotation->sample &&
 	    (!m_controller->isLoaded() || !(static_cast<GBA*>(m_controller->thread()->core->board)->memory.hw.devices & (HW_GYRO | HW_TILT)))) {
 		m_rotation->sample(m_rotation);
@@ -129,7 +128,6 @@ void SensorView::updateSensors() {
 	if (m_rotation->readGyroZ) {
 		m_ui.gyroView->setValue(m_rotation->readGyroZ(m_rotation));
 	}
-	m_controller->threadContinue();
 }
 
 void SensorView::setLuminanceValue(int value) {

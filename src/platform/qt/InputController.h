@@ -7,20 +7,18 @@
 #define QGBA_INPUT_CONTROLLER_H
 
 #include "GamepadAxisEvent.h"
+#include "GamepadHatEvent.h"
 
 #include <QObject>
 #include <QSet>
+#include <QTimer>
 #include <QVector>
 
-class QTimer;
-
-extern "C" {
-#include "gba/input.h"
+#include <mgba/internal/gba/input.h>
 
 #ifdef BUILD_SDL
 #include "platform/sdl/sdl-events.h"
 #endif
-}
 
 struct mRotationSource;
 struct mRumble;
@@ -55,16 +53,18 @@ public:
 
 	const mInputMap* map() const { return &m_inputMap; }
 
-	void updateJoysticks();
 	int pollEvents();
 
 	static const int32_t AXIS_THRESHOLD = 0x3000;
 	QSet<int> activeGamepadButtons(int type);
 	QSet<QPair<int, GamepadAxisEvent::Direction>> activeGamepadAxes(int type);
+	QSet<QPair<int, GamepadHatEvent::Direction>> activeGamepadHats(int type);
 	void recalibrateAxes();
 
 	void bindAxis(uint32_t type, int axis, GamepadAxisEvent::Direction, GBAKey);
 	void unbindAllAxes(uint32_t type);
+
+	void bindHat(uint32_t type, int hat, GamepadHatEvent::Direction, GBAKey);
 
 	QStringList connectedGamepads(uint32_t type) const;
 	int gamepad(uint32_t type) const;
@@ -90,6 +90,7 @@ signals:
 
 public slots:
 	void testGamepad(int type);
+	void updateJoysticks();
 
 	// TODO: Move these to somewhere that makes sense
 	void suspendScreensaver();
@@ -103,24 +104,25 @@ private:
 	void sendGamepadEvent(QEvent*);
 
 	mInputMap m_inputMap;
-	ConfigController* m_config;
+	ConfigController* m_config = nullptr;
 	int m_playerId;
-	bool m_allowOpposing;
+	bool m_allowOpposing = false;
 	QWidget* m_topLevel;
 	QWidget* m_focusParent;
 
 #ifdef BUILD_SDL
 	static int s_sdlInited;
 	static mSDLEvents s_sdlEvents;
-	mSDLPlayer m_sdlPlayer;
-	bool m_playerAttached;
+	mSDLPlayer m_sdlPlayer{};
+	bool m_playerAttached = false;
 #endif
 
 	QVector<int> m_deadzones;
 
 	QSet<int> m_activeButtons;
 	QSet<QPair<int, GamepadAxisEvent::Direction>> m_activeAxes;
-	QTimer* m_gamepadTimer;
+	QSet<QPair<int, GamepadHatEvent::Direction>> m_activeHats;
+	QTimer m_gamepadTimer{nullptr};
 
 	QSet<GBAKey> m_pendingEvents;
 };

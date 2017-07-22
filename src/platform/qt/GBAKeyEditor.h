@@ -11,9 +11,7 @@
 #include <QSet>
 #include <QWidget>
 
-extern "C" {
-#include "gba/input.h"
-}
+#include <mgba/internal/gba/input.h>
 
 class QComboBox;
 class QTimer;
@@ -65,12 +63,13 @@ private:
 
 #ifdef BUILD_SDL
 	void lookupAxes(const mInputMap*);
+	void lookupHats(const mInputMap*);
 #endif
 
 	KeyEditor* keyById(GBAKey);
 
-	QComboBox* m_profileSelect;
-	QWidget* m_clear;
+	QComboBox* m_profileSelect = nullptr;
+	QWidget* m_clear = nullptr;
 	QWidget* m_buttons;
 	KeyEditor* m_keyDU;
 	KeyEditor* m_keyDD;

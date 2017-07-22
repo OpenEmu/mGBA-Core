@@ -3,7 +3,7 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "circle-buffer.h"
+#include <mgba-util/circle-buffer.h>
 
 #ifndef NDEBUG
 static int _checkIntegrity(struct CircleBuffer* buffer) {
@@ -123,6 +123,34 @@ int CircleBufferWrite16(struct CircleBuffer* buffer, int16_t value) {
 	}
 #endif
 	return 2;
+}
+
+size_t CircleBufferWrite(struct CircleBuffer* buffer, const void* input, size_t length) {
+	int8_t* data = buffer->writePtr;
+	if (buffer->size + length > buffer->capacity) {
+		return 0;
+	}
+	size_t remaining = buffer->capacity - ((int8_t*) data - (int8_t*) buffer->data);
+	if (length <= remaining) {
+		memcpy(data, input, length);
+		if (length == remaining) {
+			buffer->writePtr = buffer->data;
+		} else {
+			buffer->writePtr = (int8_t*) data + length;
+		}
+	} else {
+		memcpy(data, input, remaining);
+		memcpy(buffer->data, (const int8_t*) input + remaining, length - remaining);
+		buffer->writePtr = (int8_t*) buffer->data + length - remaining;
+	}
+
+	buffer->size += length;
+#ifndef NDEBUG
+	if (!_checkIntegrity(buffer)) {
+		abort();
+	}
+#endif
+	return length;
 }
 
 int CircleBufferRead8(struct CircleBuffer* buffer, int8_t* value) {

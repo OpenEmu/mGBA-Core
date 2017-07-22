@@ -3,10 +3,10 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "directories.h"
+#include <mgba/core/directories.h>
 
-#include "core/config.h"
-#include "util/vfs.h"
+#include <mgba/core/config.h>
+#include <mgba-util/vfs.h>
 
 #if !defined(MINIMAL_CORE) || MINIMAL_CORE < 2
 void mDirectorySetInit(struct mDirectorySet* dirs) {
@@ -22,28 +22,58 @@ void mDirectorySetDeinit(struct mDirectorySet* dirs) {
 	mDirectorySetDetachBase(dirs);
 
 	if (dirs->archive) {
+		if (dirs->archive == dirs->save) {
+			dirs->save = NULL;
+		}
+		if (dirs->archive == dirs->patch) {
+			dirs->patch = NULL;
+		}
+		if (dirs->archive == dirs->state) {
+			dirs->state = NULL;
+		}
+		if (dirs->archive == dirs->screenshot) {
+			dirs->screenshot = NULL;
+		}
 		dirs->archive->close(dirs->archive);
-		dirs->archive = 0;
+		dirs->archive = NULL;
 	}
 
 	if (dirs->save) {
+		if (dirs->save == dirs->patch) {
+			dirs->patch = NULL;
+		}
+		if (dirs->save == dirs->state) {
+			dirs->state = NULL;
+		}
+		if (dirs->save == dirs->screenshot) {
+			dirs->screenshot = NULL;
+		}
 		dirs->save->close(dirs->save);
-		dirs->save = 0;
+		dirs->save = NULL;
 	}
 
 	if (dirs->patch) {
+		if (dirs->patch == dirs->state) {
+			dirs->state = NULL;
+		}
+		if (dirs->patch == dirs->screenshot) {
+			dirs->screenshot = NULL;
+		}
 		dirs->patch->close(dirs->patch);
-		dirs->patch = 0;
+		dirs->patch = NULL;
 	}
 
 	if (dirs->state) {
+		if (dirs->state == dirs->screenshot) {
+			dirs->state = NULL;
+		}
 		dirs->state->close(dirs->state);
-		dirs->state = 0;
+		dirs->state = NULL;
 	}
 
 	if (dirs->screenshot) {
 		dirs->screenshot->close(dirs->screenshot);
-		dirs->screenshot = 0;
+		dirs->screenshot = NULL;
 	}
 }
 
@@ -65,21 +95,21 @@ void mDirectorySetAttachBase(struct mDirectorySet* dirs, struct VDir* base) {
 
 void mDirectorySetDetachBase(struct mDirectorySet* dirs) {
 	if (dirs->save == dirs->base) {
-		dirs->save = 0;
+		dirs->save = NULL;
 	}
 	if (dirs->patch == dirs->base) {
-		dirs->patch = 0;
+		dirs->patch = NULL;
 	}
 	if (dirs->state == dirs->base) {
-		dirs->state = 0;
+		dirs->state = NULL;
 	}
 	if (dirs->screenshot == dirs->base) {
-		dirs->screenshot = 0;
+		dirs->screenshot = NULL;
 	}
 
 	if (dirs->base) {
 		dirs->base->close(dirs->base);
-		dirs->base = 0;
+		dirs->base = NULL;
 	}
 }
 

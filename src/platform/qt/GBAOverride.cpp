@@ -5,9 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "GBAOverride.h"
 
-extern "C" {
-#include "core/core.h"
-}
+#include <mgba/core/core.h>
 
 using namespace QGBA;
 
@@ -18,7 +16,7 @@ void GBAOverride::apply(struct mCore* core) {
 	GBAOverrideApply(static_cast<GBA*>(core->board), &override);
 }
 
-void GBAOverride::identify(struct mCore* core) {
+void GBAOverride::identify(const struct mCore* core) {
 	if (core->platform(core) != PLATFORM_GBA) {
 		return;
 	}

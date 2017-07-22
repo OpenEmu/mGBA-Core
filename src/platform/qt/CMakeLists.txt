@@ -1,6 +1,3 @@
-cmake_minimum_required(VERSION 2.8.11)
-enable_language(CXX)
-
 if(NOT MSVC)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 endif()
@@ -22,7 +19,7 @@ if(BUILD_SDL)
 	if(SDL2_FOUND)
 		link_directories(${SDL2_LIBDIR})
 	endif()
-	list(APPEND PLATFORM_LIBRARY ${SDL_LIBRARY} ${SDLMAIN_LIBRARY})
+	list(APPEND PLATFORM_LIBRARY ${SDL_LIBRARY})
 	list(APPEND PLATFORM_SRC ${PLATFORM_SRC} ${CMAKE_SOURCE_DIR}/src/platform/sdl/sdl-events.c ${CMAKE_SOURCE_DIR}/src/platform/sdl/sdl-audio.c)
 	include_directories(${SDL_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/src/platform/sdl)
 endif()
@@ -30,20 +27,15 @@ endif()
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-if(NOT WIN32 OR NOT BUILD_SDL)
-	find_package(Qt5Multimedia)
-endif()
+find_package(Qt5Multimedia)
 find_package(Qt5OpenGL)
-find_package(Qt5Network)
 find_package(Qt5Widgets)
 
 if(NOT BUILD_GL AND NOT BUILD_GLES2)
-	message(WARNING "OpenGL is required to build the Qt port")
-	set(BUILD_QT OFF PARENT_SCOPE)
-	return()
+	message(WARNING "OpenGL is recommended to build the Qt port")
 endif()
 
-if(NOT Qt5OpenGL_FOUND OR NOT Qt5Widgets_FOUND OR NOT Qt5Network_FOUND)
+if(NOT Qt5Widgets_FOUND)
 	message(WARNING "Cannot find Qt modules")
 	set(BUILD_QT OFF PARENT_SCOPE)
 	return()
@@ -68,7 +60,8 @@ endif()
 
 set(SOURCE_FILES
 	AboutScreen.cpp
-	ArchiveInspector.cpp
+	AssetTile.cpp
+	AssetView.cpp
 	AudioProcessor.cpp
 	CheatsModel.cpp
 	CheatsView.cpp
@@ -82,18 +75,20 @@ set(SOURCE_FILES
 	GameController.cpp
 	GamepadAxisEvent.cpp
 	GamepadButtonEvent.cpp
+	GamepadHatEvent.cpp
 	IOViewer.cpp
 	InputController.cpp
 	InputProfile.cpp
 	KeyEditor.cpp
-	LibraryModel.cpp
 	LoadSaveState.cpp
 	LogController.cpp
 	LogView.cpp
 	MemoryModel.cpp
+	MemorySearch.cpp
 	MemoryView.cpp
 	MessagePainter.cpp
 	MultiplayerController.cpp
+	ObjView.cpp
 	OverrideView.cpp
 	PaletteView.cpp
 	ROMInfo.cpp
@@ -106,6 +101,7 @@ set(SOURCE_FILES
 	Swatch.cpp
 	TilePainter.cpp
 	TileView.cpp
+	utils.cpp
 	Window.cpp
 	VFileDevice.cpp
 	VideoView.cpp)
@@ -113,12 +109,16 @@ set(SOURCE_FILES
 set(UI_FILES
 	AboutScreen.ui
 	ArchiveInspector.ui
+	AssetTile.ui
 	CheatsView.ui
+	DebuggerConsole.ui
 	GIFView.ui
 	IOViewer.ui
 	LoadSaveState.ui
 	LogView.ui
+	MemorySearch.ui
 	MemoryView.ui
+	ObjView.ui
 	OverrideView.ui
 	PaletteView.ui
 	ROMInfo.ui
@@ -135,10 +135,8 @@ set(GBA_SRC
 set(GB_SRC
 	GBOverride.cpp)
 
-qt5_wrap_ui(UI_SRC ${UI_FILES})
-
 set(QT_LIBRARIES)
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libqt5widgets5,libqt5opengl5,libqt5network5")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libqt5widgets5,libqt5opengl5")
 
 set(AUDIO_SRC)
 if(BUILD_SDL)
@@ -172,8 +170,23 @@ if(NOT AUDIO_SRC)
 	return()
 endif()
 
+if(USE_DEBUGGERS)
+	list(APPEND SOURCE_FILES
+		DebuggerController.cpp
+		DebuggerConsole.cpp
+		DebuggerConsoleController.cpp)
+endif()
+
 if(USE_GDB_STUB)
-	list(APPEND PLATFORM_SRC GDBController.cpp GDBWindow.cpp)
+	list(APPEND SOURCE_FILES GDBController.cpp GDBWindow.cpp)
+endif()
+
+if(USE_SQLITE3)
+	list(APPEND SOURCE_FILES
+		ArchiveInspector.cpp
+		library/LibraryController.cpp
+		library/LibraryGrid.cpp
+		library/LibraryTree.cpp)
 endif()
 
 qt5_add_resources(RESOURCES resources.qrc)
@@ -199,10 +212,12 @@ if(NOT DEFINED DATADIR)
 		set(DATADIR ${CMAKE_INSTALL_DATADIR}/${BINARY_NAME})
 	endif()
 endif()
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/res/shaders DESTINATION ${DATADIR} COMPONENT ${BINARY_NAME}-qt)
+if(BUILD_GL OR BUILD_GLES2)
+	install(DIRECTORY ${CMAKE_SOURCE_DIR}/res/shaders DESTINATION ${DATADIR} COMPONENT ${BINARY_NAME}-qt)
+endif()
 install(FILES ${CMAKE_SOURCE_DIR}/res/nointro.dat DESTINATION ${DATADIR} COMPONENT ${BINARY_NAME}-qt)
 if(NOT WIN32 AND NOT APPLE)
-	list(APPEND QT_DEFINES DATADIR="${DATADIR}")
+	list(APPEND QT_DEFINES DATADIR="${CMAKE_INSTALL_PREFIX}/${DATADIR}")
 endif()
 
 find_package(Qt5LinguistTools)
@@ -215,22 +230,39 @@ if(Qt5LinguistTools_FOUND)
 	else()
 		qt5_add_translation(TRANSLATION_FILES ${TS_FILES})
 	endif()
+	set(QT_QM_FILES)
+	if(QT_STATIC)
+		get_target_property(QT_CORE_LOCATION Qt5::Core LOCATION)
+		get_filename_component(QT_CORE_LOCATION ${QT_CORE_LOCATION} DIRECTORY)
+		get_filename_component(QT_QM_LOCATION "${QT_CORE_LOCATION}/../translations" ABSOLUTE)
+		foreach(TS ${TS_FILES})
+			get_filename_component(TS ${TS} NAME)
+			string(REGEX REPLACE "${BINARY_NAME}-(.*).ts$" "qtbase_\\1.qm" QT_QM "${TS}")
+			list(APPEND QT_QM_FILES "${QT_QM_LOCATION}/${QT_QM}")
+		endforeach()
+		list(APPEND TRANSLATION_FILES ${QT_QM_FILES})
+	endif()
 	add_custom_command(OUTPUT ${TRANSLATION_QRC}
-		               COMMAND ${CMAKE_COMMAND} -DTRANSLATION_QRC:FILEPATH="${TRANSLATION_QRC}" -DTRANSLATION_FILES="${TRANSLATION_FILES}" -P "${CMAKE_CURRENT_SOURCE_DIR}/ts.cmake"
+		               COMMAND ${CMAKE_COMMAND} -DTRANSLATION_QRC:FILEPATH="${TRANSLATION_QRC}" -DQM_BASE="${CMAKE_CURRENT_BINARY_DIR}" "-DTRANSLATION_FILES='${TRANSLATION_FILES}'" -P "${CMAKE_CURRENT_SOURCE_DIR}/ts.cmake"
 		               DEPENDS ${TRANSLATION_FILES})
 	qt5_add_resources(TRANSLATION_RESOURCES ${TRANSLATION_QRC})
 	list(APPEND RESOURCES ${TRANSLATION_RESOURCES})
 endif()
 
+qt5_wrap_ui(UI_SRC ${UI_FILES})
+
 add_executable(${BINARY_NAME}-qt WIN32 MACOSX_BUNDLE main.cpp ${CMAKE_SOURCE_DIR}/res/mgba.icns ${SOURCE_FILES} ${PLATFORM_SRC} ${UI_SRC} ${AUDIO_SRC} ${RESOURCES})
 set_target_properties(${BINARY_NAME}-qt PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/res/info.plist.in COMPILE_DEFINITIONS "${FEATURE_DEFINES};${FUNCTION_DEFINES};${OS_DEFINES};${QT_DEFINES}")
 
-list(APPEND QT_LIBRARIES Qt5::Widgets Qt5::OpenGL Qt5::Network)
-target_link_libraries(${BINARY_NAME}-qt ${PLATFORM_LIBRARY} ${BINARY_NAME} ${QT_LIBRARIES} ${OPENGL_LIBRARY} ${OPENGLES2_LIBRARY})
+list(APPEND QT_LIBRARIES Qt5::Widgets)
+if(BUILD_GL OR BUILD_GLES2)
+	list(APPEND QT_LIBRARIES Qt5::OpenGL ${OPENGL_LIBRARY} ${OPENGLES2_LIBRARY})
+endif()
+target_link_libraries(${BINARY_NAME}-qt ${PLATFORM_LIBRARY} ${BINARY_NAME} ${QT_LIBRARIES})
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS}" PARENT_SCOPE)
 
 install(TARGETS ${BINARY_NAME}-qt
-	RUNTIME DESTINATION bin COMPONENT ${BINARY_NAME}-qt
+	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${BINARY_NAME}-qt
 	BUNDLE DESTINATION Applications COMPONENT ${BINARY_NAME}-qt)
 if(UNIX AND NOT APPLE)
 	find_program(DESKTOP_FILE_INSTALL desktop-file-install)
@@ -245,15 +277,34 @@ if(APPLE OR WIN32)
 	set_target_properties(${BINARY_NAME}-qt PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
 endif()
 if(APPLE)
-	set(DEPLOY_OPTIONS -p platforms/libqcocoa.dylib,audio/libqtaudio_coreaudio.dylib)
-	if(NOT CMAKE_INSTALL_NAME_TOOL EQUAL "install_name_tool")
-		set(DEPLOY_OPTIONS ${DEPLOY_OPTIONS} -I ${CMAKE_INSTALL_NAME_TOOL})
+	if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+		get_target_property(QTCOCOA Qt5::QCocoaIntegrationPlugin LOCATION)
+		get_target_property(COREAUDIO Qt5::CoreAudioPlugin LOCATION)
+		get_target_property(BUNDLE_PATH ${BINARY_NAME}-qt LOCATION)
+		target_sources(${BINARY_NAME}-qt PRIVATE "${PLUGINS}")
+		set_source_files_properties("${QTCOCOA}" PROPERTIES MACOSX_PACKAGE_LOCATION Contents/PlugIns)
+		set_source_files_properties("${COREAUDIO}" PROPERTIES MACOSX_PACKAGE_LOCATION Contents/PlugIns)
+		install(CODE "
+		   include(BundleUtilities)
+		   set(BU_CHMOD_BUNDLE_ITEMS ON)
+		   file(GLOB_RECURSE PLUGINS \"${BUNDLE_PATH}/Contents/PlugIns/*${CMAKE_SHARED_LIBRARY_SUFFIX}\")
+		   fixup_bundle(\"${BUNDLE_PATH}\"   \"${PLUGINS}\"   \"\")
+		   " COMPONENT ${BINARY_NAME}-qt)
+	else()
+		set(DEPLOY_OPTIONS -p platforms/libqcocoa.dylib,audio/libqtaudio_coreaudio.dylib)
+		if(NOT CMAKE_INSTALL_NAME_TOOL EQUAL "install_name_tool")
+			set(DEPLOY_OPTIONS ${DEPLOY_OPTIONS} -I "${CMAKE_INSTALL_NAME_TOOL}")
+		endif()
+		if(DEFINED CMAKE_OTOOL AND NOT CMAKE_OTOOL EQUAL "otool")
+			set(DEPLOY_OPTIONS ${DEPLOY_OPTIONS} -O "${CMAKE_OTOOL}")
+		endif()
+		if(DEFINED CROSS_ROOT)
+			set(DEPLOY_OPTIONS ${DEPLOY_OPTIONS} -R "${CROSS_ROOT}")
+		endif()
+		install(CODE "execute_process(COMMAND \"${CMAKE_SOURCE_DIR}/tools/deploy-mac.py\" -v ${DEPLOY_OPTIONS} \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Applications/${PROJECT_NAME}.app\")")
 	endif()
-	if(DEFINED CMAKE_OTOOL AND NOT CMAKE_OTOOL EQUAL "otool")
-		set(DEPLOY_OPTIONS ${DEPLOY_OPTIONS} -O ${CMAKE_OTOOL})
-	endif()
-	if(DEFINED CROSS_ROOT)
-		set(DEPLOY_OPTIONS ${DEPLOY_OPTIONS} -R ${CROSS_ROOT})
-	endif()
-	add_custom_command(TARGET ${BINARY_NAME}-qt POST_BUILD COMMAND ${CMAKE_SOURCE_DIR}/tools/deploy-mac.py ${DEPLOY_OPTIONS} ${PROJECT_NAME}.app)
+endif()
+if(WIN32 AND CMAKE_MAJOR_VERSION GREATER 2 AND CMAKE_MINOR_VERSION GREATER 7)
+	# Work around CMake issue #16907
+	set_target_properties(${BINARY_NAME}-qt PROPERTIES AUTORCC ON SKIP_AUTORCC ON)
 endif()

@@ -12,18 +12,19 @@
 #include <unistd.h>
 #include <wiiuse/wpad.h>
 
-#include "util/common.h"
+#include <mgba-util/common.h>
 
-#include "core/core.h"
+#include <mgba/core/blip_buf.h>
+#include <mgba/core/core.h>
 #include "feature/gui/gui-runner.h"
-#include "gba/audio.h"
-#include "gba/gba.h"
-#include "gba/input.h"
-#include "util/gui.h"
-#include "util/gui/file-select.h"
-#include "util/gui/font.h"
-#include "util/gui/menu.h"
-#include "util/vfs.h"
+#include <mgba/internal/gba/audio.h>
+#include <mgba/internal/gba/gba.h>
+#include <mgba/internal/gba/input.h>
+#include <mgba-util/gui.h>
+#include <mgba-util/gui/file-select.h>
+#include <mgba-util/gui/font.h>
+#include <mgba-util/gui/menu.h>
+#include <mgba-util/vfs.h>
 
 #define GCN1_INPUT 0x47434E31
 #define GCN2_INPUT 0x47434E32
@@ -640,8 +641,8 @@ void _guiPrepare(void) {
 }
 
 void _setup(struct mGUIRunner* runner) {
-	runner->core->setRotation(runner->core, &rotation);
-	runner->core->setRumble(runner->core, &rumble);
+	runner->core->setPeripheral(runner->core, mPERIPH_ROTATION, &rotation);
+	runner->core->setPeripheral(runner->core, mPERIPH_RUMBLE, &rumble);
 
 	_mapKey(&runner->core->inputMap, GCN1_INPUT, PAD_BUTTON_A, GBA_KEY_A);
 	_mapKey(&runner->core->inputMap, GCN1_INPUT, PAD_BUTTON_B, GBA_KEY_B);

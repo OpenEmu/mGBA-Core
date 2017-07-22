@@ -11,12 +11,12 @@
 #include "GBAApp.h"
 #include "GBAKeyEditor.h"
 #include "InputController.h"
+#include "ShaderSelector.h"
 #include "ShortcutView.h"
 
-extern "C" {
-#include "core/serialize.h"
-#include "gba/gba.h"
-}
+#include <mgba/core/serialize.h>
+#include <mgba/core/version.h>
+#include <mgba/internal/gba/gba.h>
 
 using namespace QGBA;
 
@@ -91,6 +91,7 @@ SettingsView::SettingsView(ConfigController* controller, InputController* inputC
 			m_ui.patchPath->setText(path);
 		}
 	});
+	connect(m_ui.clearCache, &QAbstractButton::pressed, this, &SettingsView::libraryCleared);
 
 	// TODO: Move to reloadConfig()
 	QVariant audioDriver = m_controller->getQtOption("audioDriver");
@@ -129,12 +130,20 @@ SettingsView::SettingsView(ConfigController* controller, InputController* inputC
 	}
 #endif
 
-	connect(m_ui.biosBrowse, SIGNAL(clicked()), this, SLOT(selectBios()));
+	connect(m_ui.gbaBiosBrowse, &QPushButton::clicked, [this]() {
+		selectBios(m_ui.gbaBios);
+	});
+	connect(m_ui.gbBiosBrowse, &QPushButton::clicked, [this]() {
+		selectBios(m_ui.gbBios);
+	});
+	connect(m_ui.gbcBiosBrowse, &QPushButton::clicked, [this]() {
+		selectBios(m_ui.gbcBios);
+	});
 
 	GBAKeyEditor* editor = new GBAKeyEditor(inputController, InputController::KEYBOARD, QString(), this);
 	m_ui.stackedWidget->addWidget(editor);
-	m_ui.tabs->addItem("Keyboard");
-	connect(m_ui.buttonBox, SIGNAL(accepted()), editor, SLOT(save()));
+	m_ui.tabs->addItem(tr("Keyboard"));
+	connect(m_ui.buttonBox, &QDialogButtonBox::accepted, editor, &GBAKeyEditor::save);
 
 	GBAKeyEditor* buttonEditor = nullptr;
 #ifdef BUILD_SDL
@@ -142,11 +151,11 @@ SettingsView::SettingsView(ConfigController* controller, InputController* inputC
 	const char* profile = inputController->profileForType(SDL_BINDING_BUTTON);
 	buttonEditor = new GBAKeyEditor(inputController, SDL_BINDING_BUTTON, profile);
 	m_ui.stackedWidget->addWidget(buttonEditor);
-	m_ui.tabs->addItem("Controllers");
-	connect(m_ui.buttonBox, SIGNAL(accepted()), buttonEditor, SLOT(save()));
+	m_ui.tabs->addItem(tr("Controllers"));
+	connect(m_ui.buttonBox, &QDialogButtonBox::accepted, buttonEditor, &GBAKeyEditor::save);
 #endif
 
-	connect(m_ui.buttonBox, SIGNAL(accepted()), this, SLOT(updateConfig()));
+	connect(m_ui.buttonBox, &QDialogButtonBox::accepted, this, &SettingsView::updateConfig);
 	connect(m_ui.buttonBox, &QDialogButtonBox::clicked, [this, editor, buttonEditor](QAbstractButton* button) {
 		if (m_ui.buttonBox->buttonRole(button) == QDialogButtonBox::ApplyRole) {
 			updateConfig();
@@ -157,22 +166,55 @@ SettingsView::SettingsView(ConfigController* controller, InputController* inputC
 		}
 	});
 
+	m_ui.languages->setItemData(0, QLocale("en"));
+	QDir ts(":/translations/");
+	for (auto name : ts.entryList()) {
+		if (!name.endsWith(".qm") || !name.startsWith(binaryName)) {
+			continue;
+		}
+		QLocale locale(name.remove(QString("%0-").arg(binaryName)).remove(".qm"));
+		m_ui.languages->addItem(locale.nativeLanguageName(), locale);
+		if (locale == QLocale()) {
+			m_ui.languages->setCurrentIndex(m_ui.languages->count() - 1);
+		}
+	}
+
 	ShortcutView* shortcutView = new ShortcutView();
 	shortcutView->setController(shortcutController);
 	shortcutView->setInputController(inputController);
 	m_ui.stackedWidget->addWidget(shortcutView);
-	m_ui.tabs->addItem("Shortcuts");
+	m_ui.tabs->addItem(tr("Shortcuts"));
 }
 
-void SettingsView::selectBios() {
+SettingsView::~SettingsView() {
+#if defined(BUILD_GL) || defined(BUILD_GLES)
+	if (m_shader) {
+		m_ui.stackedWidget->removeWidget(m_shader);
+		m_shader->setParent(nullptr);
+	}
+#endif
+}
+
+void SettingsView::setShaderSelector(ShaderSelector* shaderSelector) {
+#if defined(BUILD_GL) || defined(BUILD_GLES)
+	m_shader = shaderSelector;
+	m_ui.stackedWidget->addWidget(m_shader);
+	m_ui.tabs->addItem(tr("Shaders"));
+	connect(m_ui.buttonBox, &QDialogButtonBox::accepted, m_shader, &ShaderSelector::saved);
+#endif
+}
+
+void SettingsView::selectBios(QLineEdit* bios) {
 	QString filename = GBAApp::app()->getOpenFileName(this, tr("Select BIOS"));
 	if (!filename.isEmpty()) {
-		m_ui.bios->setText(filename);
+		bios->setText(filename);
 	}
 }
 
 void SettingsView::updateConfig() {
-	saveSetting("bios", m_ui.bios);
+	saveSetting("gba.bios", m_ui.gbaBios);
+	saveSetting("gb.bios", m_ui.gbBios);
+	saveSetting("gbc.bios", m_ui.gbcBios);
 	saveSetting("useBios", m_ui.useBios);
 	saveSetting("skipBios", m_ui.skipBios);
 	saveSetting("audioBuffers", m_ui.audioBufferSize);
@@ -182,10 +224,12 @@ void SettingsView::updateConfig() {
 	saveSetting("frameskip", m_ui.frameskip);
 	saveSetting("fpsTarget", m_ui.fpsTarget);
 	saveSetting("lockAspectRatio", m_ui.lockAspectRatio);
+	saveSetting("lockIntegerScaling", m_ui.lockIntegerScaling);
 	saveSetting("volume", m_ui.volume);
 	saveSetting("mute", m_ui.mute);
 	saveSetting("rewindEnable", m_ui.rewind);
 	saveSetting("rewindBufferCapacity", m_ui.rewindCapacity);
+	saveSetting("rewindSave", m_ui.rewindSave);
 	saveSetting("resampleVideo", m_ui.resampleVideo);
 	saveSetting("allowOpposingDirections", m_ui.allowOpposingDirections);
 	saveSetting("suspendScreensaver", m_ui.suspendScreensaver);
@@ -194,6 +238,9 @@ void SettingsView::updateConfig() {
 	saveSetting("savestatePath", m_ui.savestatePath);
 	saveSetting("screenshotPath", m_ui.screenshotPath);
 	saveSetting("patchPath", m_ui.patchPath);
+	saveSetting("libraryStyle", m_ui.libraryStyle->currentIndex());
+	saveSetting("showLibrary", m_ui.showLibrary);
+	saveSetting("preload", m_ui.preload);
 
 	if (m_ui.fastForwardUnbounded->isChecked()) {
 		saveSetting("fastForwardRatio", "-1");
@@ -213,13 +260,13 @@ void SettingsView::updateConfig() {
 		break;
 	}
 
-	int loadState = 0;
+	int loadState = SAVESTATE_RTC;
 	loadState |= m_ui.loadStateScreenshot->isChecked() ? SAVESTATE_SCREENSHOT : 0;
 	loadState |= m_ui.loadStateSave->isChecked() ? SAVESTATE_SAVEDATA : 0;
 	loadState |= m_ui.loadStateCheats->isChecked() ? SAVESTATE_CHEATS : 0;
 	saveSetting("loadStateExtdata", loadState);
 
-	int saveState = 0;
+	int saveState = SAVESTATE_RTC | SAVESTATE_METADATA;
 	saveState |= m_ui.saveStateScreenshot->isChecked() ? SAVESTATE_SCREENSHOT : 0;
 	saveState |= m_ui.saveStateSave->isChecked() ? SAVESTATE_SAVEDATA : 0;
 	saveState |= m_ui.saveStateCheats->isChecked() ? SAVESTATE_CHEATS : 0;
@@ -239,14 +286,23 @@ void SettingsView::updateConfig() {
 		emit displayDriverChanged();
 	}
 
+	QLocale language = m_ui.languages->itemData(m_ui.languages->currentIndex()).toLocale();
+	if (language != m_controller->getQtOption("language").toLocale() && !(language.bcp47Name() == QLocale::system().bcp47Name() && m_controller->getQtOption("language").isNull())) {
+		m_controller->setQtOption("language", language.bcp47Name());
+		emit languageChanged();
+	}
+
 	m_controller->write();
 
 	emit pathsChanged();
-	emit biosLoaded(m_ui.bios->text());
+	emit biosLoaded(PLATFORM_GBA, m_ui.gbaBios->text());
 }
 
 void SettingsView::reloadConfig() {	
-	loadSetting("bios", m_ui.bios);
+	loadSetting("bios", m_ui.gbaBios);
+	loadSetting("gba.bios", m_ui.gbaBios);
+	loadSetting("gb.bios", m_ui.gbBios);
+	loadSetting("gbc.bios", m_ui.gbcBios);
 	loadSetting("useBios", m_ui.useBios);
 	loadSetting("skipBios", m_ui.skipBios);
 	loadSetting("audioBuffers", m_ui.audioBufferSize);
@@ -256,10 +312,12 @@ void SettingsView::reloadConfig() {
 	loadSetting("frameskip", m_ui.frameskip);
 	loadSetting("fpsTarget", m_ui.fpsTarget);
 	loadSetting("lockAspectRatio", m_ui.lockAspectRatio);
+	loadSetting("lockIntegerScaling", m_ui.lockIntegerScaling);
 	loadSetting("volume", m_ui.volume);
 	loadSetting("mute", m_ui.mute);
 	loadSetting("rewindEnable", m_ui.rewind);
 	loadSetting("rewindBufferCapacity", m_ui.rewindCapacity);
+	loadSetting("rewindSave", m_ui.rewindSave);
 	loadSetting("resampleVideo", m_ui.resampleVideo);
 	loadSetting("allowOpposingDirections", m_ui.allowOpposingDirections);
 	loadSetting("suspendScreensaver", m_ui.suspendScreensaver);
@@ -268,6 +326,10 @@ void SettingsView::reloadConfig() {
 	loadSetting("savestatePath", m_ui.savestatePath);
 	loadSetting("screenshotPath", m_ui.screenshotPath);
 	loadSetting("patchPath", m_ui.patchPath);
+	loadSetting("showLibrary", m_ui.showLibrary);
+	loadSetting("preload", m_ui.preload);
+
+	m_ui.libraryStyle->setCurrentIndex(loadSetting("libraryStyle").toInt());
 
 	double fastForwardRatio = loadSetting("fastForwardRatio").toDouble();
 	if (fastForwardRatio <= 0) {
@@ -291,7 +353,7 @@ void SettingsView::reloadConfig() {
 	bool ok;
 	int loadState = loadSetting("loadStateExtdata").toInt(&ok);
 	if (!ok) {
-		loadState = SAVESTATE_SCREENSHOT;
+		loadState = SAVESTATE_SCREENSHOT | SAVESTATE_RTC;
 	}
 	m_ui.loadStateScreenshot->setChecked(loadState & SAVESTATE_SCREENSHOT);
 	m_ui.loadStateSave->setChecked(loadState & SAVESTATE_SAVEDATA);
@@ -299,7 +361,7 @@ void SettingsView::reloadConfig() {
 
 	int saveState = loadSetting("saveStateExtdata").toInt(&ok);
 	if (!ok) {
-		saveState = SAVESTATE_SCREENSHOT | SAVESTATE_SAVEDATA | SAVESTATE_CHEATS;
+		saveState = SAVESTATE_SCREENSHOT | SAVESTATE_SAVEDATA | SAVESTATE_CHEATS | SAVESTATE_RTC | SAVESTATE_METADATA;
 	}
 	m_ui.saveStateScreenshot->setChecked(saveState & SAVESTATE_SCREENSHOT);
 	m_ui.saveStateSave->setChecked(saveState & SAVESTATE_SAVEDATA);

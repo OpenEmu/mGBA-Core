@@ -3,9 +3,9 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "util/vfs.h"
+#include <mgba-util/vfs.h>
 
-#include "util/string.h"
+#include <mgba-util/string.h>
 #include <strsafe.h>
 
 static bool _vdwClose(struct VDir* vd);
@@ -84,7 +84,7 @@ void _vdwRewind(struct VDir* vd) {
 	struct VDirW32* vdw = (struct VDirW32*) vd;
 	FindClose(vdw->handle);
 	wchar_t name[MAX_PATH + 1];
-	MultiByteToWideChar(CP_UTF8, MB_PRECOMPOSED, vdw->path, -1, name, MAX_PATH);
+	MultiByteToWideChar(CP_UTF8, 0, vdw->path, -1, name, MAX_PATH);
 	StringCchCatNW(name, MAX_PATH, L"\\*", 2);
 	if (vdw->vde.utf8Name) {
 		free(vdw->vde.utf8Name);

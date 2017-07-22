@@ -9,9 +9,7 @@
 
 #ifdef BUILD_SDL
 
-extern "C" {
 #include "platform/sdl/sdl-audio.h"
-}
 
 namespace QGBA {
 
@@ -35,7 +33,7 @@ public slots:
 	virtual void requestSampleRate(unsigned) override;
 
 private:
-	mSDLAudio m_audio;
+	mSDLAudio m_audio{2048, 44100};
 };
 
 }

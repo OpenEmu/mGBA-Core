@@ -10,17 +10,13 @@
 
 #include <QAudioOutput>
 
-extern "C" {
-#include "core/thread.h"
-}
+#include <mgba/core/core.h>
+#include <mgba/core/thread.h>
 
 using namespace QGBA;
 
 AudioProcessorQt::AudioProcessorQt(QObject* parent)
 	: AudioProcessor(parent)
-	, m_audioOutput(nullptr)
-	, m_device(nullptr)
-	, m_sampleRate(44100)
 {
 }
 
@@ -59,7 +55,6 @@ bool AudioProcessorQt::start() {
 
 	m_device->setInput(input());
 	m_device->setFormat(m_audioOutput->format());
-	m_audioOutput->setBufferSize(input()->core->getAudioBufferSize(input()->core) * 4);
 
 	m_audioOutput->start(m_device);
 	return m_audioOutput->state() == QAudio::ActiveState;
@@ -72,12 +67,6 @@ void AudioProcessorQt::pause() {
 }
 
 void AudioProcessorQt::setBufferSamples(int samples) {
-	AudioProcessor::setBufferSamples(samples);
-	if (m_audioOutput) {
-		m_audioOutput->stop();
-		m_audioOutput->setBufferSize(samples * 4);
-		m_audioOutput->start(m_device);
-	}
 }
 
 void AudioProcessorQt::inputParametersChanged() {

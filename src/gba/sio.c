@@ -3,11 +3,12 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "sio.h"
+#include <mgba/internal/gba/sio.h>
 
-#include "gba/io.h"
+#include <mgba/internal/gba/gba.h>
+#include <mgba/internal/gba/io.h>
 
-mLOG_DEFINE_CATEGORY(GBA_SIO, "GBA Serial I/O");
+mLOG_DEFINE_CATEGORY(GBA_SIO, "GBA Serial I/O", "gba.sio");
 
 const int GBASIOCyclesPerTransfer[4][MAX_GBAS] = {
 	{ 38326, 73003, 107680, 142356 },
@@ -154,11 +155,13 @@ void GBASIOWriteSIOCNT(struct GBASIO* sio, uint16_t value) {
 		case SIO_NORMAL_8:
 		case SIO_NORMAL_32:
 			value |= 0x0004;
-			if ((value & 0x4080) == 0x4080) {
-				// TODO: Test this on hardware to see if this is correct
-				GBARaiseIRQ(sio->p, IRQ_SIO);
+			if ((value & 0x0081) == 0x0081) {
+				if (value & 0x4000) {
+					// TODO: Test this on hardware to see if this is correct
+					GBARaiseIRQ(sio->p, IRQ_SIO);
+				}
+				value &= ~0x0080;
 			}
-			value &= ~0x0080;
 			break;
 		default:
 			// TODO
@@ -173,11 +176,4 @@ uint16_t GBASIOWriteRegister(struct GBASIO* sio, uint32_t address, uint16_t valu
 		return sio->activeDriver->writeRegister(sio->activeDriver, address, value);
 	}
 	return value;
-}
-
-int32_t GBASIOProcessEvents(struct GBASIO* sio, int32_t cycles) {
-	if (sio->activeDriver && sio->activeDriver->processEvents) {
-		return sio->activeDriver->processEvents(sio->activeDriver, cycles);
-	}
-	return INT_MAX;
 }

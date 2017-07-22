@@ -14,21 +14,17 @@
 #include <QKeyEvent>
 #include <QPainter>
 
-extern "C" {
-#include "core/serialize.h"
-#ifdef M_CORE_GBA
-#include "gba/serialize.h"
-#endif
-#include "util/memory.h"
-}
+#include <mgba/core/serialize.h>
+#include <mgba-util/memory.h>
+#include <mgba-util/vfs.h>
 
 using namespace QGBA;
 
 LoadSaveState::LoadSaveState(GameController* controller, QWidget* parent)
 	: QWidget(parent)
 	, m_controller(controller)
-	, m_currentFocus(controller->stateSlot() - 1)
 	, m_mode(LoadSave::LOAD)
+	, m_currentFocus(controller->stateSlot() - 1)
 {
 	setAttribute(Qt::WA_TranslucentBackground);
 	m_ui.setupUi(this);
@@ -61,7 +57,7 @@ LoadSaveState::LoadSaveState(GameController* controller, QWidget* parent)
 	}
 
 	QAction* escape = new QAction(this);
-	escape->connect(escape, SIGNAL(triggered()), this, SLOT(close()));
+	connect(escape, &QAction::triggered, this, &QWidget::close);
 	escape->setShortcut(QKeySequence("Esc"));
 	escape->setShortcutContext(Qt::WidgetWithChildrenShortcut);
 	addAction(escape);
@@ -192,7 +188,7 @@ void LoadSaveState::loadState(int slot) {
 		return;
 	}
 
-	QDateTime creation/*(QDateTime::fromMSecsSinceEpoch(state->creationUsec / 1000LL))*/; // TODO
+	QDateTime creation;
 	QImage stateImage;
 
 	unsigned width, height;
@@ -200,6 +196,12 @@ void LoadSaveState::loadState(int slot) {
 	mStateExtdataItem item;
 	if (mStateExtdataGet(&extdata, EXTDATA_SCREENSHOT, &item) && item.size >= width * height * 4) {
 		stateImage = QImage((uchar*) item.data, width, height, QImage::Format_ARGB32).rgbSwapped();
+	}
+
+	if (mStateExtdataGet(&extdata, EXTDATA_META_TIME, &item) && item.size == sizeof(uint64_t)) {
+		uint64_t creationUsec;
+		LOAD_64LE(creationUsec, 0, item.data);
+		creation = QDateTime::fromMSecsSinceEpoch(creationUsec / 1000LL);
 	}
 
 	if (!stateImage.isNull()) {

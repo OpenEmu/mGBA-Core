@@ -17,14 +17,15 @@
 #include <QGridLayout>
 #include <QSpinBox>
 
-extern "C" {
-#include "core/version.h"
+#include <mgba/core/version.h>
+#include <mgba-util/vfs.h>
 #include "platform/video-backend.h"
+
+#if defined(BUILD_GL) || defined(BUILD_GLES)
 
 #if !defined(_WIN32) || defined(USE_EPOXY)
 #include "platform/opengl/gles2.h"
 #endif
-}
 
 using namespace QGBA;
 
@@ -32,15 +33,17 @@ ShaderSelector::ShaderSelector(Display* display, ConfigController* config, QWidg
 	: QDialog(parent, Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint)
 	, m_display(display)
 	, m_config(config)
-	, m_shaderPath("")
 {
 	m_ui.setupUi(this);
 
 	refreshShaders();
 
-	connect(m_ui.load, SIGNAL(clicked()), this, SLOT(selectShader()));
-	connect(m_ui.unload, SIGNAL(clicked()), this, SLOT(clearShader()));
-	connect(m_ui.buttonBox, SIGNAL(clicked(QAbstractButton*)), this, SLOT(buttonPressed(QAbstractButton*)));
+	connect(m_ui.load, &QAbstractButton::clicked, this, &ShaderSelector::selectShader);
+	connect(m_ui.unload, &QAbstractButton::clicked, this, &ShaderSelector::clearShader);
+	connect(m_ui.buttonBox, &QDialogButtonBox::clicked, this, &ShaderSelector::buttonPressed);
+	connect(this, &ShaderSelector::saved, [this]() {
+		m_config->setOption("shader", m_shaderPath);
+	});
 }
 
 ShaderSelector::~ShaderSelector() {
@@ -61,7 +64,7 @@ void ShaderSelector::clear() {
 void ShaderSelector::selectShader() {
 	QString path(GBAApp::dataDir());
 	path += QLatin1String("/shaders");
-	QFileDialog dialog(nullptr, tr("Load shader"), path, tr("%1 Shader (%.shader)").arg(projectName));
+	QFileDialog dialog(nullptr, tr("Load shader"), path);
 	dialog.setFileMode(QFileDialog::Directory);
 	dialog.exec();
 	QStringList names = dialog.selectedFiles();
@@ -88,7 +91,6 @@ void ShaderSelector::clearShader() {
 	m_display->clearShaders();
 	refreshShaders();
 	m_shaderPath = "";
-	m_config->setOption("shader", nullptr);
 }
 
 void ShaderSelector::refreshShaders() {
@@ -113,9 +115,13 @@ void ShaderSelector::refreshShaders() {
 		m_ui.author->clear();
 	}
 
-	disconnect(this, SIGNAL(saved()), 0, 0);
-	disconnect(this, SIGNAL(reset()), 0, 0);
-	disconnect(this, SIGNAL(resetToDefault()), 0, 0);
+	disconnect(this, &ShaderSelector::saved, 0, 0);
+	disconnect(this, &ShaderSelector::reset, 0, 0);
+	disconnect(this, &ShaderSelector::resetToDefault, 0, 0);
+
+	connect(this, &ShaderSelector::saved, [this]() {
+		m_config->setOption("shader", m_shaderPath);
+	});
 
 #if !defined(_WIN32) || defined(USE_EPOXY)
 	if (m_shaders->preprocessShader) {
@@ -265,9 +271,9 @@ void ShaderSelector::buttonPressed(QAbstractButton* button) {
 	case QDialogButtonBox::Reset:
 		emit reset();
 		break;
-	case QDialogButtonBox::Save:
-		m_config->setOption("shader", m_shaderPath);
+	case QDialogButtonBox::Ok:
 		emit saved();
+		close();
 		break;
  	case QDialogButtonBox::RestoreDefaults:
 		emit resetToDefault();
@@ -276,3 +282,5 @@ void ShaderSelector::buttonPressed(QAbstractButton* button) {
 		break;
 	}
 }
+
+#endif

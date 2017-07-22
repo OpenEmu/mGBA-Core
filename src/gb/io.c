@@ -3,13 +3,13 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "io.h"
+#include <mgba/internal/gb/io.h>
 
-#include "gb/gb.h"
-#include "gb/sio.h"
-#include "gb/serialize.h"
+#include <mgba/internal/gb/gb.h>
+#include <mgba/internal/gb/sio.h>
+#include <mgba/internal/gb/serialize.h>
 
-mLOG_DEFINE_CATEGORY(GB_IO, "GB I/O");
+mLOG_DEFINE_CATEGORY(GB_IO, "GB I/O", "gb.io");
 
 const char* const GBIORegisterNames[] = {
 	[REG_JOYP] = "JOYP",
@@ -158,6 +158,9 @@ void GBIOReset(struct GB* gb) {
 
 void GBIOWrite(struct GB* gb, unsigned address, uint8_t value) {
 	switch (address) {
+	case REG_SB:
+		GBSIOWriteSB(&gb->sio, value);
+		break;
 	case REG_SC:
 		GBSIOWriteSC(&gb->sio, value);
 		break;
@@ -338,7 +341,6 @@ void GBIOWrite(struct GB* gb, unsigned address, uint8_t value) {
 		}
 		break;
 	case REG_JOYP:
-	case REG_SB:
 	case REG_TIMA:
 	case REG_TMA:
 		// Handled transparently by the registers
@@ -357,13 +359,7 @@ void GBIOWrite(struct GB* gb, unsigned address, uint8_t value) {
 		GBVideoWriteLCDC(&gb->video, value);
 		break;
 	case REG_LYC:
-		if (gb->video.mode == 2) {
-			gb->video.stat = GBRegisterSTATSetLYC(gb->video.stat, value == gb->video.ly);
-			if (GBRegisterSTATIsLYCIRQ(gb->video.stat) && value == gb->video.ly) {
-				gb->memory.io[REG_IF] |= (1 << GB_IRQ_LCDSTAT);
-				GBUpdateIRQs(gb->video.p);
-			}
-		}
+		GBVideoWriteLYC(&gb->video, value);
 		break;
 	case REG_DMA:
 		GBMemoryDMA(gb, value << 8);
@@ -386,7 +382,7 @@ void GBIOWrite(struct GB* gb, unsigned address, uint8_t value) {
 		value = gb->video.stat;
 		break;
 	case 0x50:
-		if (gb->memory.romBase != gb->memory.rom) {
+		if (gb->memory.romBase < gb->memory.rom || gb->memory.romBase > &gb->memory.rom[gb->memory.romSize - 1]) {
 			free(gb->memory.romBase);
 			gb->memory.romBase = gb->memory.rom;
 		}
@@ -566,6 +562,13 @@ uint8_t GBIORead(struct GB* gb, unsigned address) {
 	}
 	success:
 	return gb->memory.io[address] | _registerMask[address];
+}
+
+void GBTestKeypadIRQ(struct GB* gb) {
+	if (_readKeys(gb)) {
+		gb->memory.io[REG_IF] |= (1 << GB_IRQ_KEYPAD);
+		GBUpdateIRQs(gb);
+	}
 }
 
 struct GBSerializedState;

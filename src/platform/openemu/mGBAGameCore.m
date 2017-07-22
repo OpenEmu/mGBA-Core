@@ -101,9 +101,9 @@ const char* const binaryName = "mGBA";
 	if (core->dirs.save) {
 		core->dirs.save->close(core->dirs.save);
 	}
-	core->dirs.save = VDirOpen([batterySavesDirectory UTF8String]);
+	core->dirs.save = VDirOpen([batterySavesDirectory fileSystemRepresentation]);
 
-	if (!mCoreLoadFile(core, [path UTF8String])) {
+	if (!mCoreLoadFile(core, [path fileSystemRepresentation])) {
 		*error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadROMError userInfo:nil];
 		return NO;
 	}
@@ -226,14 +226,14 @@ const char* const binaryName = "mGBA";
 
 - (void)saveStateToFileAtPath:(NSString *)fileName completionHandler:(void (^)(BOOL, NSError *))block
 {
-	struct VFile* vf = VFileOpen([fileName UTF8String], O_CREAT | O_TRUNC | O_RDWR);
+	struct VFile* vf = VFileOpen([fileName fileSystemRepresentation], O_CREAT | O_TRUNC | O_RDWR);
 	block(mCoreSaveStateNamed(core, vf, 0), nil);
 	vf->close(vf);
 }
 
 - (void)loadStateFromFileAtPath:(NSString *)fileName completionHandler:(void (^)(BOOL, NSError *))block
 {
-	struct VFile* vf = VFileOpen([fileName UTF8String], O_RDONLY);
+	struct VFile* vf = VFileOpen([fileName fileSystemRepresentation], O_RDONLY);
 	block(mCoreLoadStateNamed(core, vf, 0), nil);
 	vf->close(vf);
 }

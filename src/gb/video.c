@@ -154,6 +154,7 @@ void _endMode0(struct mTiming* timing, void* context, uint32_t cyclesLate) {
 		video->mode = 1;
 		video->modeEvent.callback = _endMode1;
 
+		mTimingDeschedule(&video->p->timing, &video->frameEvent);
 		mTimingSchedule(&video->p->timing, &video->frameEvent, -cyclesLate);
 
 		if (!_statIRQAsserted(video, oldStat) && GBRegisterSTATIsOAMIRQ(video->stat)) {
@@ -230,6 +231,7 @@ void _endMode3(struct mTiming* timing, void* context, uint32_t cyclesLate) {
 	GBVideoProcessDots(video);
 	if (video->ly < GB_VIDEO_VERTICAL_PIXELS && video->p->memory.isHdma && video->p->memory.io[REG_HDMA5] != 0xFF) {
 		video->p->memory.hdmaRemaining = 0x10;
+		video->p->cpuBlocked = true;
 		mTimingDeschedule(timing, &video->p->memory.hdmaEvent);
 		mTimingSchedule(timing, &video->p->memory.hdmaEvent, 0);
 	}
@@ -263,10 +265,10 @@ void _updateFrameCount(struct mTiming* timing, void* context, uint32_t cyclesLat
 	}
 
 	GBFrameEnded(video->p);
+	mCoreSyncPostFrame(video->p->sync);
 	--video->frameskipCounter;
 	if (video->frameskipCounter < 0) {
 		video->renderer->finishFrame(video->renderer);
-		mCoreSyncPostFrame(video->p->sync);
 		video->frameskipCounter = video->frameskip;
 	}
 	++video->frameCounter;
@@ -342,9 +344,8 @@ void GBVideoWriteLCDC(struct GBVideo* video, GBRegisterLCDC value) {
 
 		video->ly = 0;
 		video->p->memory.io[REG_LY] = 0;
-		// TODO: Does this read as 0 for 4 T-cycles?
 		GBRegisterSTAT oldStat = video->stat;
-		video->stat = GBRegisterSTATSetMode(video->stat, 2);
+		video->stat = GBRegisterSTATSetMode(video->stat, 0);
 		video->stat = GBRegisterSTATSetLYC(video->stat, video->ly == video->p->memory.io[REG_LYC]);
 		if (!_statIRQAsserted(video, oldStat) && _statIRQAsserted(video, video->stat)) {
 			video->p->memory.io[REG_IF] |= (1 << GB_IRQ_LCDSTAT);

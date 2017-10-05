@@ -308,6 +308,9 @@ bool GBALoadMB(struct GBA* gba, struct VFile* vf) {
 	gba->memory.romSize = 0;
 	gba->memory.romMask = 0;
 	gba->romCrc32 = doCrc32(gba->memory.wram, gba->pristineRomSize);
+	if (gba->cpu && gba->memory.activeRegion == REGION_WORKING_RAM) {
+		gba->cpu->memory.setActiveRegion(gba->cpu, gba->cpu->gprs[ARM_PC]);
+	}
 	return true;
 }
 
@@ -342,6 +345,9 @@ bool GBALoadROM(struct GBA* gba, struct VFile* vf) {
 	gba->romCrc32 = doCrc32(gba->memory.rom, gba->memory.romSize);
 	GBAHardwareInit(&gba->memory.hw, &((uint16_t*) gba->memory.rom)[GPIO_REG_DATA >> 1]);
 	GBAVFameDetect(&gba->memory.vfame, gba->memory.rom, gba->memory.romSize);
+	if (gba->cpu && gba->memory.activeRegion >= REGION_CART0) {
+		gba->cpu->memory.setActiveRegion(gba->cpu, gba->cpu->gprs[ARM_PC]);
+	}
 	// TODO: error check
 	return true;
 }
@@ -469,6 +475,9 @@ void GBADebug(struct GBA* gba, uint16_t flags) {
 }
 
 bool GBAIsROM(struct VFile* vf) {
+	if (!vf) {
+		return false;
+	}
 	if (vf->seek(vf, GBA_ROM_MAGIC_OFFSET, SEEK_SET) < 0) {
 		return false;
 	}
@@ -686,19 +695,17 @@ void GBATestKeypadIRQ(struct GBA* gba) {
 		return;
 	}
 	int isAnd = keycnt & 0x8000;
-	uint16_t keyInput;
-
 	if (!gba->keySource) {
 		// TODO?
 		return;
 	}
 
 	keycnt &= 0x3FF;
-	keyInput = *gba->keySource;
+	uint16_t keyInput = *gba->keySource & keycnt;
 
 	if (isAnd && keycnt == keyInput) {
 		GBARaiseIRQ(gba, IRQ_KEYPAD);
-	} else if (!isAnd && keycnt & keyInput) {
+	} else if (!isAnd && keyInput) {
 		GBARaiseIRQ(gba, IRQ_KEYPAD);
 	}
 }

@@ -29,6 +29,9 @@ const uint32_t GBA_COMPONENT_MAGIC = 0x1000000;
 static const size_t GBA_ROM_MAGIC_OFFSET = 3;
 static const uint8_t GBA_ROM_MAGIC[] = { 0xEA };
 
+static const size_t GBA_ROM_MAGIC_OFFSET2 = 0xB2;
+static const uint8_t GBA_ROM_MAGIC2[] = { 0x96 };
+
 static const size_t GBA_MB_MAGIC_OFFSET = 0xC0;
 
 static void GBAInit(void* cpu, struct mCPUComponent* component);
@@ -478,17 +481,48 @@ bool GBAIsROM(struct VFile* vf) {
 	if (!vf) {
 		return false;
 	}
+
+	uint8_t signature[sizeof(GBA_ROM_MAGIC) + sizeof(GBA_ROM_MAGIC2)];
 	if (vf->seek(vf, GBA_ROM_MAGIC_OFFSET, SEEK_SET) < 0) {
 		return false;
 	}
-	uint8_t signature[sizeof(GBA_ROM_MAGIC)];
-	if (vf->read(vf, &signature, sizeof(signature)) != sizeof(signature)) {
+	if (vf->read(vf, &signature, sizeof(GBA_ROM_MAGIC)) != sizeof(GBA_ROM_MAGIC)) {
 		return false;
 	}
+	if (memcmp(signature, GBA_ROM_MAGIC, sizeof(GBA_ROM_MAGIC)) != 0) {
+		return false;
+	}
+
+	if (vf->seek(vf, GBA_ROM_MAGIC_OFFSET2, SEEK_SET) < 0) {
+		return false;
+	}
+	if (vf->read(vf, &signature, sizeof(GBA_ROM_MAGIC2)) != sizeof(GBA_ROM_MAGIC2)) {
+		return false;
+	}
+	if (memcmp(signature, GBA_ROM_MAGIC2, sizeof(GBA_ROM_MAGIC2)) != 0) {
+		// If the signature byte is missing then we must be using an unfixed ROM
+		uint32_t buffer[0x9C / sizeof(uint32_t)];
+		if (vf->seek(vf, 0x4, SEEK_SET) < 0) {
+			return false;
+		}
+		if (vf->read(vf, &buffer, sizeof(buffer)) != sizeof(buffer)) {
+			return false;
+		}
+		uint32_t bits = 0;
+		size_t i;
+		for (i = 0; i < sizeof(buffer) / sizeof(*buffer); ++i) {
+			bits |= buffer[i];
+		}
+		if (bits) {
+			return false;
+		}
+	}
+
+
 	if (GBAIsBIOS(vf)) {
 		return false;
 	}
-	return memcmp(signature, GBA_ROM_MAGIC, sizeof(signature)) == 0;
+	return true;
 }
 
 bool GBAIsMB(struct VFile* vf) {
@@ -509,16 +543,49 @@ bool GBAIsMB(struct VFile* vf) {
 	LOAD_32(opcode, 0, &signature);
 	struct ARMInstructionInfo info;
 	ARMDecodeARM(opcode, &info);
-	if (info.branchType != ARM_BRANCH) {
-		return false;
+	if (info.branchType == ARM_BRANCH) {
+		if (info.op1.immediate <= 0) {
+			return false;
+		} else if (info.op1.immediate == 28) {
+			// Ancient toolchain that is known to throw MB detection for a loop
+			return false;
+		} else if (info.op1.immediate != 24) {
+			return true;
+		}
 	}
-	if (info.op1.immediate <= 0) {
-		return false;
-	} else if (info.op1.immediate == 28) {
-		// Ancient toolchain that is known to throw MB detection for a loop
-		return false;
-	} else if (info.op1.immediate != 24) {
-		return true;
+
+	uint32_t pc = GBA_MB_MAGIC_OFFSET;
+	int i;
+	for (i = 0; i < 80; ++i) {
+		if (vf->read(vf, &signature, sizeof(signature)) != sizeof(signature)) {
+			break;
+		}
+		pc += 4;
+		LOAD_32(opcode, 0, &signature);
+		ARMDecodeARM(opcode, &info);
+		if (info.mnemonic != ARM_MN_LDR) {
+			continue;
+		}
+		if ((info.operandFormat & ARM_OPERAND_MEMORY) && info.memory.baseReg == ARM_PC && info.memory.format & ARM_MEMORY_IMMEDIATE_OFFSET) {
+			uint32_t immediate = info.memory.offset.immediate;
+			if (info.memory.format & ARM_MEMORY_OFFSET_SUBTRACT) {
+				immediate = -immediate;
+			}
+			immediate += pc + 8;
+			if (vf->seek(vf, immediate, SEEK_SET) < 0) {
+				break;
+			}
+			if (vf->read(vf, &signature, sizeof(signature)) != sizeof(signature)) {
+				break;
+			}
+			LOAD_32(immediate, 0, &signature);
+			if (vf->seek(vf, pc, SEEK_SET) < 0) {
+				break;
+			}
+			if ((immediate & ~0x7FF) == BASE_WORKING_RAM) {
+				return true;
+			}
+		}
 	}
 	// Found a libgba-linked cart...these are a bit harder to detect.
 	return false;
@@ -569,7 +636,7 @@ void GBAHitStub(struct ARMCore* cpu, uint32_t opcode) {
 	if (gba->debugger) {
 		struct mDebuggerEntryInfo info = {
 			.address = _ARMPCAddress(cpu),
-			.opcode = opcode
+			.type.bp.opcode = opcode
 		};
 		mDebuggerEnter(gba->debugger->d.p, DEBUGGER_ENTER_ILLEGAL_OP, &info);
 	}
@@ -592,7 +659,7 @@ void GBAIllegal(struct ARMCore* cpu, uint32_t opcode) {
 	if (gba->debugger) {
 		struct mDebuggerEntryInfo info = {
 			.address = _ARMPCAddress(cpu),
-			.opcode = opcode
+			.type.bp.opcode = opcode
 		};
 		mDebuggerEnter(gba->debugger->d.p, DEBUGGER_ENTER_ILLEGAL_OP, &info);
 	} else
@@ -613,7 +680,7 @@ void GBABreakpoint(struct ARMCore* cpu, int immediate) {
 		if (gba->debugger) {
 			struct mDebuggerEntryInfo info = {
 				.address = _ARMPCAddress(cpu),
-				.breakType = BREAKPOINT_SOFTWARE
+				.type.bp.breakType = BREAKPOINT_SOFTWARE
 			};
 			mDebuggerEnter(gba->debugger->d.p, DEBUGGER_ENTER_BREAKPOINT, &info);
 		}

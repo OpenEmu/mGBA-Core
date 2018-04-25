@@ -16,31 +16,33 @@
 
 mLOG_DEFINE_CATEGORY(GB_MEM, "GB Memory", "gb.memory");
 
-struct OAMBlock {
-	uint16_t low;
-	uint16_t high;
+enum GBBus {
+	GB_BUS_CPU,
+	GB_BUS_MAIN,
+	GB_BUS_VRAM,
+	GB_BUS_RAM
 };
 
-static const struct OAMBlock _oamBlockDMG[] = {
-	{ 0xA000, 0xFE00 },
-	{ 0xA000, 0xFE00 },
-	{ 0xA000, 0xFE00 },
-	{ 0xA000, 0xFE00 },
-	{ 0x8000, 0xA000 },
-	{ 0xA000, 0xFE00 },
-	{ 0xA000, 0xFE00 },
-	{ 0xA000, 0xFE00 },
+static const enum GBBus _oamBlockDMG[] = {
+	GB_BUS_MAIN, // 0x0000
+	GB_BUS_MAIN, // 0x2000
+	GB_BUS_MAIN, // 0x4000
+	GB_BUS_MAIN, // 0x6000
+	GB_BUS_VRAM, // 0x8000
+	GB_BUS_MAIN, // 0xA000
+	GB_BUS_MAIN, // 0xC000
+	GB_BUS_CPU, // 0xE000
 };
 
-static const struct OAMBlock _oamBlockCGB[] = {
-	{ 0xA000, 0xC000 },
-	{ 0xA000, 0xC000 },
-	{ 0xA000, 0xC000 },
-	{ 0xA000, 0xC000 },
-	{ 0x8000, 0xA000 },
-	{ 0xA000, 0xC000 },
-	{ 0xC000, 0xFE00 },
-	{ 0xA000, 0xC000 },
+static const enum GBBus _oamBlockCGB[] = {
+	GB_BUS_MAIN, // 0x0000
+	GB_BUS_MAIN, // 0x2000
+	GB_BUS_MAIN, // 0x4000
+	GB_BUS_MAIN, // 0x6000
+	GB_BUS_VRAM, // 0x8000
+	GB_BUS_MAIN, // 0xA000
+	GB_BUS_RAM, // 0xC000
+	GB_BUS_CPU // 0xE000
 };
 
 static void _pristineCow(struct GB* gba);
@@ -191,9 +193,10 @@ uint8_t GBLoad8(struct LR35902Core* cpu, uint16_t address) {
 	struct GB* gb = (struct GB*) cpu->master;
 	struct GBMemory* memory = &gb->memory;
 	if (gb->memory.dmaRemaining) {
-		const struct OAMBlock* block = gb->model < GB_MODEL_CGB ? _oamBlockDMG : _oamBlockCGB;
-		block = &block[memory->dmaSource >> 13];
-		if (address >= block->low && address < block->high) {
+		const enum GBBus* block = gb->model < GB_MODEL_CGB ? _oamBlockDMG : _oamBlockCGB;
+		enum GBBus dmaBus = block[memory->dmaSource >> 13];
+		enum GBBus accessBus = block[address >> 13];
+		if (dmaBus != GB_BUS_CPU && dmaBus == accessBus) {
 			return 0xFF;
 		}
 		if (address >= GB_BASE_OAM && address < GB_BASE_UNUSABLE) {
@@ -259,9 +262,10 @@ void GBStore8(struct LR35902Core* cpu, uint16_t address, int8_t value) {
 	struct GB* gb = (struct GB*) cpu->master;
 	struct GBMemory* memory = &gb->memory;
 	if (gb->memory.dmaRemaining) {
-		const struct OAMBlock* block = gb->model < GB_MODEL_CGB ? _oamBlockDMG : _oamBlockCGB;
-		block = &block[memory->dmaSource >> 13];
-		if (address >= block->low && address < block->high) {
+		const enum GBBus* block = gb->model < GB_MODEL_CGB ? _oamBlockDMG : _oamBlockCGB;
+		enum GBBus dmaBus = block[memory->dmaSource >> 13];
+		enum GBBus accessBus = block[address >> 13];
+		if (dmaBus != GB_BUS_CPU && dmaBus == accessBus) {
 			return;
 		}
 		if (address >= GB_BASE_OAM && address < GB_BASE_UNUSABLE) {
@@ -289,7 +293,7 @@ void GBStore8(struct LR35902Core* cpu, uint16_t address, int8_t value) {
 	case GB_REGION_EXTERNAL_RAM + 1:
 		if (memory->rtcAccess) {
 			memory->rtcRegs[memory->activeRtcReg] = value;
-		} else if (memory->sramAccess && memory->sram) {
+		} else if (memory->sramAccess && memory->sram && memory->mbcType != GB_MBC2) {
 			memory->sramBank[address & (GB_SIZE_EXTERNAL_RAM - 1)] = value;
 		} else if (memory->mbcType == GB_MBC7) {
 			GBMBC7Write(memory, address, value);
@@ -449,7 +453,7 @@ void GBMemoryDMA(struct GB* gb, uint16_t base) {
 	gb->memory.dmaRemaining = 0xA0;
 }
 
-void GBMemoryWriteHDMA5(struct GB* gb, uint8_t value) {
+uint8_t GBMemoryWriteHDMA5(struct GB* gb, uint8_t value) {
 	gb->memory.hdmaSource = gb->memory.io[REG_HDMA1] << 8;
 	gb->memory.hdmaSource |= gb->memory.io[REG_HDMA2];
 	gb->memory.hdmaDest = gb->memory.io[REG_HDMA3] << 8;
@@ -457,7 +461,7 @@ void GBMemoryWriteHDMA5(struct GB* gb, uint8_t value) {
 	gb->memory.hdmaSource &= 0xFFF0;
 	if (gb->memory.hdmaSource >= 0x8000 && gb->memory.hdmaSource < 0xA000) {
 		mLOG(GB_MEM, GAME_ERROR, "Invalid HDMA source: %04X", gb->memory.hdmaSource);
-		return;
+		return value | 0x80;
 	}
 	gb->memory.hdmaDest &= 0x1FF0;
 	gb->memory.hdmaDest |= 0x8000;
@@ -471,7 +475,10 @@ void GBMemoryWriteHDMA5(struct GB* gb, uint8_t value) {
 		}
 		gb->cpuBlocked = true;
 		mTimingSchedule(&gb->timing, &gb->memory.hdmaEvent, 0);
+	} else if (gb->memory.isHdma && !GBRegisterLCDCIsEnable(gb->memory.io[REG_LCDC])) {
+		return 0x80 | ((value + 1) & 0x7F);
 	}
+	return value & 0x7F;
 }
 
 void _GBMemoryDMAService(struct mTiming* timing, void* context, uint32_t cyclesLate) {

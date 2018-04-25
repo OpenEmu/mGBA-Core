@@ -174,7 +174,7 @@ SettingsView::SettingsView(ConfigController* controller, InputController* inputC
 		}
 		QLocale locale(name.remove(QString("%0-").arg(binaryName)).remove(".qm"));
 		m_ui.languages->addItem(locale.nativeLanguageName(), locale);
-		if (locale == QLocale()) {
+		if (locale.bcp47Name() == QLocale().bcp47Name()) {
 			m_ui.languages->setCurrentIndex(m_ui.languages->count() - 1);
 		}
 	}
@@ -187,7 +187,7 @@ SettingsView::SettingsView(ConfigController* controller, InputController* inputC
 }
 
 SettingsView::~SettingsView() {
-#if defined(BUILD_GL) || defined(BUILD_GLES)
+#if defined(BUILD_GL) || defined(BUILD_GLES2)
 	if (m_shader) {
 		m_ui.stackedWidget->removeWidget(m_shader);
 		m_shader->setParent(nullptr);
@@ -196,7 +196,7 @@ SettingsView::~SettingsView() {
 }
 
 void SettingsView::setShaderSelector(ShaderSelector* shaderSelector) {
-#if defined(BUILD_GL) || defined(BUILD_GLES)
+#if defined(BUILD_GL) || defined(BUILD_GLES2)
 	m_shader = shaderSelector;
 	m_ui.stackedWidget->addWidget(m_shader);
 	m_ui.tabs->addItem(tr("Shaders"));

@@ -1499,24 +1499,23 @@ int32_t GBAMemoryStall(struct ARMCore* cpu, int32_t wait) {
 	int32_t previousLoads = 0;
 
 	// Don't prefetch too much if we're overlapping with a previous prefetch
-	uint32_t dist = (memory->lastPrefetchedPc - cpu->gprs[ARM_PC]) >> 1;
-	if (dist < 8) {
-		previousLoads = dist;
+	uint32_t dist = (memory->lastPrefetchedPc - cpu->gprs[ARM_PC]);
+	int32_t maxLoads = 8;
+	if (dist < 16) {
+		previousLoads = dist >> 1;
+		maxLoads -= previousLoads;
 	}
 
-	int32_t s = cpu->memory.activeSeqCycles16;
-	int32_t n2s = cpu->memory.activeNonseqCycles16 - cpu->memory.activeSeqCycles16;
+	int32_t s = cpu->memory.activeSeqCycles16 + 1;
+	int32_t n2s = cpu->memory.activeNonseqCycles16 - cpu->memory.activeSeqCycles16 + 1;
 
 	// Figure out how many sequential loads we can jam in
 	int32_t stall = s;
 	int32_t loads = 1;
 
-	if (stall < wait) {
-		int32_t maxLoads = 8 - previousLoads;
-		while (stall < wait && loads < maxLoads) {
-			stall += s;
-			++loads;
-		}
+	while (stall < wait && loads < maxLoads) {
+		stall += s;
+		++loads;
 	}
 	if (stall > wait) {
 		// The wait cannot take less time than the prefetch stalls
@@ -1529,7 +1528,7 @@ int32_t GBAMemoryStall(struct ARMCore* cpu, int32_t wait) {
 	memory->lastPrefetchedPc = cpu->gprs[ARM_PC] + WORD_SIZE_THUMB * (loads + previousLoads - 1);
 
 	// The next |loads|S waitstates disappear entirely, so long as they're all in a row
-	cpu->cycles -= stall;
+	cpu->cycles -= (s - 1) * loads;
 	return wait;
 }
 
@@ -1562,4 +1561,5 @@ void _pristineCow(struct GBA* gba) {
 	}
 	gba->memory.rom = newRom;
 	gba->memory.hw.gpioBase = &((uint16_t*) gba->memory.rom)[GPIO_REG_DATA >> 1];
+	gba->isPristine = false;
 }

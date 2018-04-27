@@ -43,6 +43,10 @@
 
 #define SAMPLES 1024
 
+#ifdef DEBUG
+    #error "Cores should not be compiled in DEBUG! Follow the guide https://github.com/OpenEmu/OpenEmu/wiki/Compiling-From-Source-Guide"
+#endif
+
 const char* const binaryName = "mGBA";
 
 @interface mGBAGameCore () <OEGBASystemResponderClient>

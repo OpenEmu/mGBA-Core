@@ -71,6 +71,7 @@ const char* const binaryName = "mGBA";
 		};
 		mCoreConfigLoadDefaults(&core->config, &opts);
 		core->init(core);
+		outputBuffer = nil;
 
 		unsigned width, height;
 		core->desiredVideoDimensions(core, &width, &height);

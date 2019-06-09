@@ -119,13 +119,13 @@ typedef intptr_t ssize_t;
 #define STORE_32LE(SRC, ADDR, ARR) { \
 	uint32_t _addr = (ADDR); \
 	void* _ptr = (ARR); \
-	__asm__("stwbrx %0, %1, %2" : : "r"(SRC), "b"(_ptr), "r"(_addr)); \
+	__asm__("stwbrx %0, %1, %2" : : "r"(SRC), "b"(_ptr), "r"(_addr) : "memory"); \
 }
 
 #define STORE_16LE(SRC, ADDR, ARR) { \
 	uint32_t _addr = (ADDR); \
 	void* _ptr = (ARR); \
-	__asm__("sthbrx %0, %1, %2" : : "r"(SRC), "b"(_ptr), "r"(_addr)); \
+	__asm__("sthbrx %0, %1, %2" : : "r"(SRC), "b"(_ptr), "r"(_addr) : "memory"); \
 }
 
 #define LOAD_64LE(DEST, ADDR, ARR) { \
@@ -136,12 +136,13 @@ typedef intptr_t ssize_t;
 			uint32_t lo; \
 		}; \
 		uint64_t b64; \
-	} *bswap = (void*) &DEST; \
+	} bswap; \
 	const void* _ptr = (ARR); \
 	__asm__( \
 		"lwbrx %0, %2, %3 \n" \
 		"lwbrx %1, %2, %4 \n" \
-		: "=r"(bswap->lo), "=r"(bswap->hi) : "b"(_ptr), "r"(_addr), "r"(_addr + 4)); \
+		: "=&r"(bswap.lo), "=&r"(bswap.hi) : "b"(_ptr), "r"(_addr), "r"(_addr + 4)) ; \
+	DEST = bswap.b64; \
 }
 
 #define STORE_64LE(SRC, ADDR, ARR) { \
@@ -152,12 +153,12 @@ typedef intptr_t ssize_t;
 			uint32_t lo; \
 		}; \
 		uint64_t b64; \
-	} *bswap = (void*) &SRC; \
+	} bswap = { .b64 = SRC }; \
 	const void* _ptr = (ARR); \
 	__asm__( \
 		"stwbrx %0, %2, %3 \n" \
 		"stwbrx %1, %2, %4 \n" \
-		: : "r"(bswap->hi), "r"(bswap->lo), "b"(_ptr), "r"(_addr), "r"(_addr + 4)); \
+		: : "r"(bswap.hi), "r"(bswap.lo), "b"(_ptr), "r"(_addr), "r"(_addr + 4) : "memory"); \
 }
 
 #elif defined(__llvm__) || (__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8)
@@ -177,7 +178,11 @@ typedef intptr_t ssize_t;
 #define STORE_64LE(SRC, ADDR, ARR) *(uint64_t*) ((uintptr_t) (ARR) + (size_t) (ADDR)) = SRC
 #define STORE_32LE(SRC, ADDR, ARR) *(uint32_t*) ((uintptr_t) (ARR) + (size_t) (ADDR)) = SRC
 #define STORE_16LE(SRC, ADDR, ARR) *(uint16_t*) ((uintptr_t) (ARR) + (size_t) (ADDR)) = SRC
+#ifdef _MSC_VER
+#define LOAD_32BE(DEST, ADDR, ARR) DEST = _byteswap_ulong(((uint32_t*) ARR)[(ADDR) >> 2])
+#else
 #define LOAD_32BE(DEST, ADDR, ARR) DEST = __builtin_bswap32(((uint32_t*) ARR)[(ADDR) >> 2])
+#endif
 #endif
 
 #define MAKE_MASK(START, END) (((1 << ((END) - (START))) - 1) << (START))
@@ -191,9 +196,11 @@ typedef intptr_t ssize_t;
 #ifdef _MSC_VER
 #define ATTRIBUTE_UNUSED
 #define ATTRIBUTE_FORMAT(X, Y, Z)
+#define ATTRIBUTE_NOINLINE
 #else
 #define ATTRIBUTE_UNUSED __attribute__((unused))
 #define ATTRIBUTE_FORMAT(X, Y, Z) __attribute__((format(X, Y, Z)))
+#define ATTRIBUTE_NOINLINE __attribute__((noinline))
 #endif
 
 #define DECL_BITFIELD(NAME, TYPE) typedef TYPE NAME

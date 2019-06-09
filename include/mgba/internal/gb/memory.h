@@ -22,8 +22,12 @@ struct GB;
 enum {
 	GB_BASE_CART_BANK0 = 0x0000,
 	GB_BASE_CART_BANK1 = 0x4000,
+	GB_BASE_CART_HALFBANK1 = 0x4000,
+	GB_BASE_CART_HALFBANK2 = 0x6000,
 	GB_BASE_VRAM = 0x8000,
 	GB_BASE_EXTERNAL_RAM = 0xA000,
+	GB_BASE_EXTERNAL_RAM_HALFBANK0 = 0xA000,
+	GB_BASE_EXTERNAL_RAM_HALFBANK1 = 0xB000,
 	GB_BASE_WORKING_RAM_BANK0 = 0xC000,
 	GB_BASE_WORKING_RAM_BANK1 = 0xD000,
 	GB_BASE_OAM = 0xFE00,
@@ -46,10 +50,12 @@ enum {
 
 enum {
 	GB_SIZE_CART_BANK0 = 0x4000,
+	GB_SIZE_CART_HALFBANK = 0x2000,
 	GB_SIZE_CART_MAX = 0x800000,
 	GB_SIZE_VRAM = 0x4000,
 	GB_SIZE_VRAM_BANK0 = 0x2000,
 	GB_SIZE_EXTERNAL_RAM = 0x2000,
+	GB_SIZE_EXTERNAL_RAM_HALFBANK = 0x1000,
 	GB_SIZE_WORKING_RAM = 0x8000,
 	GB_SIZE_WORKING_RAM_BANK0 = 0x1000,
 	GB_SIZE_OAM = 0xA0,
@@ -86,9 +92,30 @@ enum GBMBC7MachineState {
 	GBMBC7_STATE_EEPROM_ERASE = 0x1C,
 };
 
+enum GBTAMA5Register {
+	GBTAMA5_BANK_LO = 0x0,
+	GBTAMA5_BANK_HI = 0x1,
+	GBTAMA5_WRITE_LO = 0x4,
+	GBTAMA5_WRITE_HI = 0x5,
+	GBTAMA5_CS = 0x6,
+	GBTAMA5_ADDR_LO = 0x7,
+	GBTAMA5_MAX = 0x8,
+	GBTAMA5_ACTIVE = 0xA,
+	GBTAMA5_READ_LO = 0xC,
+	GBTAMA5_READ_HI = 0xD,
+};
+
 struct GBMBC1State {
 	int mode;
 	int multicartStride;
+};
+
+struct GBMBC6State {
+	int currentBank1;
+	uint8_t* romBank1;
+	bool sramAccess;
+	int currentSramBank1;
+	uint8_t* sramBank1;
 };
 
 struct GBMBC7State {
@@ -102,14 +129,28 @@ struct GBMBC7State {
 	GBMBC7Field eeprom;
 };
 
+struct GBMMM01State {
+	bool locked;
+	int currentBank0;
+};
+
 struct GBPocketCamState {
 	bool registersActive;
+	uint8_t registers[0x36];
+};
+
+struct GBTAMA5State {
+	uint8_t reg;
+	uint8_t registers[GBTAMA5_MAX];
 };
 
 union GBMBCState {
 	struct GBMBC1State mbc1;
+	struct GBMBC6State mbc6;
 	struct GBMBC7State mbc7;
+	struct GBMMM01State mmm01;
 	struct GBPocketCamState pocketCam;
+	struct GBTAMA5State tama5;
 };
 
 struct mRotationSource;
@@ -160,6 +201,7 @@ struct GBMemory {
 	struct mRTCSource* rtc;
 	struct mRotationSource* rotation;
 	struct mRumble* rumble;
+	struct mImageSource* cam;
 };
 
 struct LR35902Core;

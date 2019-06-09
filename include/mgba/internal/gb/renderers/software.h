@@ -23,6 +23,7 @@ struct GBVideoSoftwareRenderer {
 	uint8_t row[GB_VIDEO_HORIZONTAL_PIXELS + 8];
 
 	color_t palette[128];
+	uint8_t lookup[64];
 
 	uint32_t* temporaryBuffer;
 
@@ -36,6 +37,18 @@ struct GBVideoSoftwareRenderer {
 
 	GBRegisterLCDC lcdc;
 	enum GBModel model;
+
+	int16_t objOffsetX;
+	int16_t objOffsetY;
+	int16_t offsetScx;
+	int16_t offsetScy;
+	int16_t offsetWx;
+	int16_t offsetWy;
+
+	int sgbTransfer;
+	uint8_t sgbPacket[128];
+	uint8_t sgbCommandHeader;
+	bool sgbBorders;
 };
 
 void GBVideoSoftwareRendererCreate(struct GBVideoSoftwareRenderer*);

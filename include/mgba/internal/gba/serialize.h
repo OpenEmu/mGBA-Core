@@ -98,28 +98,28 @@ mLOG_DECLARE_CATEGORY(GBA_STATE);
  * | 0x00202 - 0x00203: Old reload value
  * | 0x00204 - 0x00207: Last event
  * | 0x00208 - 0x0020B: Next event
- * | 0x0020C - 0x0020F: Overflow interval
+ * | 0x0020C - 0x0020F: Next IRQ
  * | 0x00210 - 0x00213: Miscellaneous flags
  * 0x00214 - 0x00227: Timer 1
  * | 0x00214 - 0x00215: Reload value
  * | 0x00216 - 0x00217: Old reload value
  * | 0x00218 - 0x0021B: Last event
  * | 0x0021C - 0x0021F: Next event
- * | 0x00220 - 0x00223: Overflow interval
+ * | 0x00220 - 0x00223: Next IRQ
  * | 0x00224 - 0x00227: Miscellaneous flags
  * 0x00228 - 0x0023B: Timer 2
  * | 0x00228 - 0x00229: Reload value
  * | 0x0022A - 0x0022B: Old reload value
  * | 0x0022C - 0x0022F: Last event
  * | 0x00230 - 0x00233: Next event
- * | 0x00234 - 0x00237: Overflow interval
+ * | 0x00234 - 0x00237: Next IRQ
  * | 0x00238 - 0x0023B: Miscellaneous flags
  * 0x0023C - 0x00250: Timer 3
  * | 0x0023C - 0x0023D: Reload value
  * | 0x0023E - 0x0023F: Old reload value
  * | 0x00240 - 0x00243: Last event
  * | 0x00244 - 0x00247: Next event
- * | 0x00248 - 0x0024B: Overflow interval
+ * | 0x00248 - 0x0024B: Next IRQ
  * | 0x0024C - 0x0024F: Miscellaneous flags
  * 0x00250 - 0x0025F: DMA 0
  * | 0x00250 - 0x00253: DMA next source
@@ -169,7 +169,8 @@ mLOG_DECLARE_CATEGORY(GBA_STATE);
  *   | bits 4 - 8: GB Player transmit position
  *   | bits 9 - 23: Reserved
  * 0x002C4 - 0x002C7: Game Boy Player next event
- * 0x002C8 - 0x002DF: Reserved (leave zero)
+ * 0x002C8 - 0x002CB: Current DMA transfer word
+ * 0x002CC - 0x002DF: Reserved (leave zero)
  * 0x002E0 - 0x002EF: Savedata state
  * | 0x002E0 - 0x002E0: Savedata type
  * | 0x002E1 - 0x002E1: Savedata command (see savedata.h)
@@ -194,6 +195,7 @@ mLOG_DECLARE_CATEGORY(GBA_STATE);
  * 0x00318 - 0x0031B: Last prefetched program counter
  * 0x0031C - 0x0031F: Miscellaneous flags
  *  | bit 0: Is CPU halted?
+ *  | bit 1: POSTFLG
  * 0x00320 - 0x003FF: Reserved (leave zero)
  * 0x00400 - 0x007FF: I/O memory
  * 0x00800 - 0x00BFF: Palette
@@ -224,6 +226,7 @@ DECL_BIT(GBASerializedSavedataFlags, DustSettling, 5);
 
 DECL_BITFIELD(GBASerializedMiscFlags, uint32_t);
 DECL_BIT(GBASerializedMiscFlags, Halted, 0);
+DECL_BIT(GBASerializedMiscFlags, POSTFLG, 1);
 
 struct GBASerializedState {
 	uint32_t versionMagic;
@@ -264,10 +267,10 @@ struct GBASerializedState {
 
 	struct {
 		uint16_t reload;
-		uint16_t oldReload;
+		uint16_t reserved;
 		uint32_t lastEvent;
 		uint32_t nextEvent;
-		int32_t overflowInterval;
+		uint32_t nextIrq;
 		GBATimerFlags flags;
 	} timers[4];
 
@@ -293,7 +296,9 @@ struct GBASerializedState {
 		uint32_t gbpNextEvent;
 	} hw;
 
-	uint32_t reservedHardware[6];
+	uint32_t dmaTransferRegister;
+
+	uint32_t reservedHardware[5];
 
 	struct {
 		uint8_t type;

@@ -84,10 +84,13 @@
 		872FA5461F231D5100BA95D9 /* text-codec.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FA5451F231D5100BA95D9 /* text-codec.c */; };
 		872FA54A1F231F5000BA95D9 /* dma.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FA5491F231F5000BA95D9 /* dma.c */; };
 		872FA54F1F23246000BA95D9 /* timer.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FA54E1F23246000BA95D9 /* timer.c */; };
+		872FC2F722ADBA9B00AF67DE /* cache-set.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FC2F622ADBA9B00AF67DE /* cache-set.c */; };
+		872FC2F922ADBAE300AF67DE /* map-cache.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FC2F822ADBAE300AF67DE /* map-cache.c */; };
+		872FC2FB22ADBBA400AF67DE /* matrix.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FC2FA22ADBBA300AF67DE /* matrix.c */; };
+		872FC2FD22ADBC2600AF67DE /* cache-set.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FC2FC22ADBC2600AF67DE /* cache-set.c */; };
 		87D3809B1D924A9600FC657D /* export.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380991D924A8100FC657D /* export.c */; };
 		87D380A21D924C9900FC657D /* core.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380A01D924C8500FC657D /* core.c */; };
 		87D380AA1D924D2800FC657D /* overrides.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380A81D924D2000FC657D /* overrides.c */; };
-		87D380B11D924EE900FC657D /* tile-cache.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380AD1D924D4F00FC657D /* tile-cache.c */; };
 		87D380B31D924F9D00FC657D /* lockstep.c in Sources */ = {isa = PBXBuildFile; fileRef = 8701D30C1D19D4AA00E8A7D8 /* lockstep.c */; };
 		87D380B61D92500200FC657D /* vfame.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380B41D924FF000FC657D /* vfame.c */; };
 		87D380D31D9251A600FC657D /* cheats.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380B81D92508500FC657D /* cheats.c */; };
@@ -232,6 +235,11 @@
 		872FA54C1F231F6C00BA95D9 /* cli.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = cli.c; sourceTree = "<group>"; };
 		872FA54E1F23246000BA95D9 /* timer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = timer.c; sourceTree = "<group>"; };
 		872FA5501F23273200BA95D9 /* proxy.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = proxy.c; sourceTree = "<group>"; };
+		872FC2F622ADBA9B00AF67DE /* cache-set.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "cache-set.c"; sourceTree = "<group>"; };
+		872FC2F822ADBAE300AF67DE /* map-cache.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "map-cache.c"; sourceTree = "<group>"; };
+		872FC2FA22ADBBA300AF67DE /* matrix.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = matrix.c; sourceTree = "<group>"; };
+		872FC2FC22ADBC2600AF67DE /* cache-set.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "cache-set.c"; sourceTree = "<group>"; };
+		872FC2FE22ADBCFB00AF67DE /* joybus.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = joybus.c; sourceTree = "<group>"; };
 		87D380911D92489C00FC657D /* cli-debugger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "cli-debugger.c"; sourceTree = "<group>"; };
 		87D380931D92489C00FC657D /* debugger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = debugger.c; sourceTree = "<group>"; };
 		87D380951D92489C00FC657D /* memory-debugger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "memory-debugger.c"; sourceTree = "<group>"; };
@@ -240,7 +248,6 @@
 		87D3809E1D924AEF00FC657D /* ring-fifo.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "ring-fifo.c"; sourceTree = "<group>"; };
 		87D380A01D924C8500FC657D /* core.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = core.c; sourceTree = "<group>"; };
 		87D380A81D924D2000FC657D /* overrides.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = overrides.c; sourceTree = "<group>"; };
-		87D380AD1D924D4F00FC657D /* tile-cache.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "tile-cache.c"; sourceTree = "<group>"; };
 		87D380B41D924FF000FC657D /* vfame.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = vfame.c; sourceTree = "<group>"; };
 		87D380B81D92508500FC657D /* cheats.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = cheats.c; sourceTree = "<group>"; };
 		87D380BA1D92508500FC657D /* config.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = config.c; sourceTree = "<group>"; };
@@ -389,6 +396,7 @@
 				8701D2EF1D19D4A900E8A7D8 /* hle-bios.s */,
 				8701D2F01D19D4A900E8A7D8 /* input.c */,
 				8701D2F31D19D4A900E8A7D8 /* io.c */,
+				872FC2FA22ADBBA300AF67DE /* matrix.c */,
 				8701D2F51D19D4A900E8A7D8 /* memory.c */,
 				87D380A81D924D2000FC657D /* overrides.c */,
 				8701D2F71D19D4A900E8A7D8 /* renderers */,
@@ -419,11 +427,11 @@
 		8701D2F71D19D4A900E8A7D8 /* renderers */ = {
 			isa = PBXGroup;
 			children = (
+				872FC2FC22ADBC2600AF67DE /* cache-set.c */,
 				8701D2F81D19D4A900E8A7D8 /* software-bg.c */,
 				8701D2F91D19D4A900E8A7D8 /* software-mode0.c */,
 				8701D2FA1D19D4A900E8A7D8 /* software-obj.c */,
 				8701D2FB1D19D4A900E8A7D8 /* software-private.h */,
-				87D380AD1D924D4F00FC657D /* tile-cache.c */,
 				8701D2FC1D19D4A900E8A7D8 /* video-software.c */,
 			);
 			path = renderers;
@@ -442,6 +450,7 @@
 		8701D30B1D19D4AA00E8A7D8 /* sio */ = {
 			isa = PBXGroup;
 			children = (
+				872FC2FE22ADBCFB00AF67DE /* joybus.c */,
 				8701D30C1D19D4AA00E8A7D8 /* lockstep.c */,
 			);
 			path = sio;
@@ -587,6 +596,7 @@
 		87D380B71D92508500FC657D /* core */ = {
 			isa = PBXGroup;
 			children = (
+				872FC2F622ADBA9B00AF67DE /* cache-set.c */,
 				87D380B81D92508500FC657D /* cheats.c */,
 				87D380BA1D92508500FC657D /* config.c */,
 				87D380BC1D92508500FC657D /* core.c */,
@@ -597,6 +607,7 @@
 				87D380C51D92508500FC657D /* library.c */,
 				872FA5391F231C5000BA95D9 /* lockstep.c */,
 				87D380C71D92508500FC657D /* log.c */,
+				872FC2F822ADBAE300AF67DE /* map-cache.c */,
 				872FA53B1F231C6200BA95D9 /* mem-search.c */,
 				87D380C91D92508500FC657D /* rewind.c */,
 				87D380CB1D92508500FC657D /* serialize.c */,
@@ -728,6 +739,7 @@
 				8701D6F21D19D7BE00E8A7D8 /* isa-arm.c in Sources */,
 				8701D6F31D19D7C300E8A7D8 /* isa-thumb.c in Sources */,
 				872FA53A1F231C5000BA95D9 /* lockstep.c in Sources */,
+				872FC2F722ADBA9B00AF67DE /* cache-set.c in Sources */,
 				87D380D31D9251A600FC657D /* cheats.c in Sources */,
 				87D380D51D9251A600FC657D /* core.c in Sources */,
 				87D380D61D9251A600FC657D /* directories.c in Sources */,
@@ -735,6 +747,7 @@
 				87D380D81D9251A600FC657D /* interface.c in Sources */,
 				87D380D91D9251A600FC657D /* library.c in Sources */,
 				87D380DA1D9251A600FC657D /* log.c in Sources */,
+				872FC2F922ADBAE300AF67DE /* map-cache.c in Sources */,
 				87D380DB1D9251A600FC657D /* rewind.c in Sources */,
 				87D380DC1D9251A600FC657D /* serialize.c in Sources */,
 				87D380DD1D9251A600FC657D /* sync.c in Sources */,
@@ -752,13 +765,14 @@
 				8701D7031D19D9C600E8A7D8 /* hle-bios.c in Sources */,
 				8701D7041D19E14000E8A7D8 /* input.c in Sources */,
 				8701D7051D19E14500E8A7D8 /* io.c in Sources */,
+				872FC2FB22ADBBA400AF67DE /* matrix.c in Sources */,
 				8701D7061D19E14900E8A7D8 /* memory.c in Sources */,
 				87D380AA1D924D2800FC657D /* overrides.c in Sources */,
+				872FC2FD22ADBC2600AF67DE /* cache-set.c in Sources */,
 				8701D7071D19E1B800E8A7D8 /* software-bg.c in Sources */,
 				8701D7081D19E1BC00E8A7D8 /* software-mode0.c in Sources */,
 				8701D7091D19E1C000E8A7D8 /* software-obj.c in Sources */,
 				872FA54F1F23246000BA95D9 /* timer.c in Sources */,
-				87D380B11D924EE900FC657D /* tile-cache.c in Sources */,
 				8701D70A1D19E1CD00E8A7D8 /* video-software.c in Sources */,
 				8701D70B1D19E23200E8A7D8 /* savedata.c in Sources */,
 				8701D70C1D19E24100E8A7D8 /* serialize.c in Sources */,
@@ -846,6 +860,7 @@
 					"-DHAVE_STRTOF_L",
 					"-DHAVE_SNPRINTF_L",
 					"-DHAVE_SETLOCALE",
+					"-DHAVE_XLOCALE",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "org.openemu.${PRODUCT_NAME:rfc1034identifier}";
 				PRODUCT_NAME = mGBA;
@@ -880,6 +895,7 @@
 					"-DHAVE_STRTOF_L",
 					"-DHAVE_SNPRINTF_L",
 					"-DHAVE_SETLOCALE",
+					"-DHAVE_XLOCALE",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "org.openemu.${PRODUCT_NAME:rfc1034identifier}";
 				PRODUCT_NAME = mGBA;

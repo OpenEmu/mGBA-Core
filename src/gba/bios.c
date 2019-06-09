@@ -251,7 +251,7 @@ static void _MidiKey2Freq(struct GBA* gba) {
 	uint32_t key = cpu->memory.load32(cpu, cpu->gprs[0] + 4, 0);
 	gba->memory.activeRegion = oldRegion;
 
-	cpu->gprs[0] = key / powf(2, (180.f - cpu->gprs[1] - cpu->gprs[2] / 256.f) / 12.f);
+	cpu->gprs[0] = key / exp2f((180.f - cpu->gprs[1] - cpu->gprs[2] / 256.f) / 12.f);
 }
 
 static void _Div(struct GBA* gba, int32_t num, int32_t denom) {
@@ -332,6 +332,12 @@ void GBASwi16(struct ARMCore* cpu, int immediate) {
 	struct GBA* gba = (struct GBA*) cpu->master;
 	mLOG(GBA_BIOS, DEBUG, "SWI: %02X r0: %08X r1: %08X r2: %08X r3: %08X",
 	    immediate, cpu->gprs[0], cpu->gprs[1], cpu->gprs[2], cpu->gprs[3]);
+
+	switch (immediate) {
+	case 0xFA:
+		GBAPrintFlush(gba);
+		return;
+	}
 
 	if (gba->memory.fullBios) {
 		ARMRaiseSWI(cpu);
@@ -803,7 +809,7 @@ static void _unBitPack(struct GBA* gba) {
 	uint32_t out = 0;
 	int bitsRemaining = 0;
 	int bitsEaten = 0;
-	while (sourceLen > 0) {
+	while (sourceLen > 0 || bitsRemaining) {
 		if (!bitsRemaining) {
 			in = cpu->memory.load8(cpu, source, 0);
 			bitsRemaining = 8;
@@ -814,7 +820,6 @@ static void _unBitPack(struct GBA* gba) {
 		in >>= sourceWidth;
 		if (scaled || bias & 0x80000000) {
 			scaled += bias & 0x7FFFFFFF;
-			scaled &= (1 << destWidth) - 1;
 		}
 		bitsRemaining -= sourceWidth;
 		out |= scaled << bitsEaten;
@@ -826,4 +831,6 @@ static void _unBitPack(struct GBA* gba) {
 			dest += 4;
 		}
 	}
+	cpu->gprs[0] = source;
+	cpu->gprs[1] = dest;
 }

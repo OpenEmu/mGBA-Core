@@ -11,6 +11,7 @@
 CXX_GUARD_START
 
 #include <mgba/core/core.h>
+#include <mgba/internal/gba/io.h>
 #include <mgba/internal/gba/video.h>
 
 struct GBAVideoSoftwareSprite {
@@ -41,6 +42,10 @@ struct GBAVideoSoftwareBackground {
 	int16_t dmy;
 	int32_t sx;
 	int32_t sy;
+	int yCache;
+	uint16_t mapCache[64];
+	int32_t offsetX;
+	int32_t offsetY;
 };
 
 enum BlendEffect {
@@ -156,6 +161,16 @@ struct GBAVideoSoftwareRenderer {
 	int oamDirty;
 	int oamMax;
 	struct GBAVideoSoftwareSprite sprites[128];
+	int16_t objOffsetX;
+	int16_t objOffsetY;
+
+	uint32_t scanlineDirty[5];
+	uint16_t nextIo[REG_SOUND1CNT_LO];
+	struct ScanlineCache {
+		uint16_t io[REG_SOUND1CNT_LO];
+		int32_t scale[2][2];
+	} cache[VIDEO_VERTICAL_PIXELS];
+	int nextY;
 
 	int start;
 	int end;

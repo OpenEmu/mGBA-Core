@@ -167,15 +167,13 @@ void _rtcReadPins(struct GBACartridgeHardware* hw) {
 		if ((hw->pinState & 5) == 1) {
 			hw->rtc.transferStep = 1;
 		}
-		_outputPins(hw, 1);
 		break;
 	case 1:
 		if ((hw->pinState & 5) == 5) {
 			hw->rtc.transferStep = 2;
-		} else {
+		} else if ((hw->pinState & 5) != 1) {
 			hw->rtc.transferStep = 0;
 		}
-		_outputPins(hw, 5);
 		break;
 	case 2:
 		if (!(hw->pinState & 1)) {
@@ -541,9 +539,9 @@ void GBAHardwarePlayerUpdate(struct GBA* gba) {
 uint16_t _gbpRead(struct mKeyCallback* callback) {
 	struct GBAGBPKeyCallback* gbpCallback = (struct GBAGBPKeyCallback*) callback;
 	if (gbpCallback->p->gbpInputsPosted == 2) {
-		return 0x30F;
+		return 0xF0;
 	}
-	return 0x3FF;
+	return 0;
 }
 
 uint16_t _gbpSioWriteRegister(struct GBASIODriver* driver, uint32_t address, uint16_t value) {

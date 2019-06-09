@@ -44,6 +44,34 @@ enum GBIRQVector {
 	GB_VECTOR_KEYPAD = 0x60,
 };
 
+enum GBSGBCommand {
+	SGB_PAL01 = 0,
+	SGB_PAL23,
+	SGB_PAL03,
+	SGB_PAL12,
+	SGB_ATTR_BLK,
+	SGB_ATTR_LIN,
+	SGB_ATTR_DIV,
+	SGB_ATTR_CHR,
+	SGB_SOUND,
+	SGB_SOU_TRN,
+	SGB_PAL_SET,
+	SGB_PAL_TRN,
+	SGB_ATRC_EN,
+	SGB_TEST_EN,
+	SGB_PICON_EN,
+	SGB_DATA_SND,
+	SGB_DATA_TRN,
+	SGB_MLT_REQ,
+	SGB_JUMP,
+	SGB_CHR_TRN,
+	SGB_PCT_TRN,
+	SGB_ATTR_TRN,
+	SGB_ATTR_SET,
+	SGB_MASK_EN,
+	SGB_OBJ_TRN
+};
+
 struct LR35902Core;
 struct mCoreSync;
 struct mAVStream;
@@ -76,6 +104,12 @@ struct GB {
 	int32_t sramDirtAge;
 	bool sramMaskWriteback;
 
+	int sgbBit;
+	int currentSgbBits;
+	uint8_t sgbPacket[16];
+	uint8_t sgbControllers;
+	uint8_t sgbCurrentController;
+
 	struct mCoreCallbacksList coreCallbacks;
 	struct mAVStream* stream;
 
@@ -83,6 +117,8 @@ struct GB {
 	bool earlyExit;
 	struct mTimingEvent eiPending;
 	unsigned doubleSpeed;
+
+	bool allowOpposingDirections;
 };
 
 struct GBCartridge {
@@ -113,6 +149,8 @@ void GBCreate(struct GB* gb);
 void GBDestroy(struct GB* gb);
 
 void GBReset(struct LR35902Core* cpu);
+void GBSkipBIOS(struct GB* gb);
+void GBUnmapBIOS(struct GB* gb);
 void GBDetectModel(struct GB* gb);
 
 void GBUpdateIRQs(struct GB* gb);
@@ -141,6 +179,7 @@ void GBGetGameCode(const struct GB* gba, char* out);
 
 void GBTestKeypadIRQ(struct GB* gb);
 
+void GBFrameStarted(struct GB* gb);
 void GBFrameEnded(struct GB* gb);
 
 CXX_GUARD_END

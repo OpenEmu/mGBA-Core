@@ -73,9 +73,20 @@ static void GBSetActiveRegion(struct LR35902Core* cpu, uint16_t address) {
 	case GB_REGION_CART_BANK1 + 2:
 	case GB_REGION_CART_BANK1 + 3:
 		cpu->memory.cpuLoad8 = GBFastLoad8;
-		cpu->memory.activeRegion = memory->romBank;
-		cpu->memory.activeRegionEnd = GB_BASE_VRAM;
-		cpu->memory.activeMask = GB_SIZE_CART_BANK0 - 1;
+		if (gb->memory.mbcType != GB_MBC6) {
+			cpu->memory.activeRegion = memory->romBank;
+			cpu->memory.activeRegionEnd = GB_BASE_VRAM;
+			cpu->memory.activeMask = GB_SIZE_CART_BANK0 - 1;
+		} else {
+			cpu->memory.activeMask = GB_SIZE_CART_HALFBANK - 1;
+			if (address & 0x2000) {
+				cpu->memory.activeRegion = memory->mbcState.mbc6.romBank1;
+				cpu->memory.activeRegionEnd = GB_BASE_VRAM;
+			} else {
+				cpu->memory.activeRegion = memory->romBank;
+				cpu->memory.activeRegionEnd = GB_BASE_CART_BANK1 + 0x2000;
+			}
+		}
 		break;
 	default:
 		cpu->memory.cpuLoad8 = GBLoad8;
@@ -107,6 +118,7 @@ void GBMemoryInit(struct GB* gb) {
 	gb->memory.rtc = NULL;
 	gb->memory.rotation = NULL;
 	gb->memory.rumble = NULL;
+	gb->memory.cam = NULL;
 
 	GBIOInit(gb);
 }
@@ -164,15 +176,27 @@ void GBMemoryReset(struct GB* gb) {
 	gb->memory.hdmaEvent.priority = 0x41;
 
 	memset(&gb->memory.hram, 0, sizeof(gb->memory.hram));
+
+	memset(&gb->memory.mbcState, 0, sizeof(gb->memory.mbcState));
+	GBMBCInit(gb);
 	switch (gb->memory.mbcType) {
 	case GB_MBC1:
 		gb->memory.mbcState.mbc1.mode = 0;
 		break;
+	case GB_MBC6:
+		GBMBCSwitchHalfBank(gb, 0, 2);
+		GBMBCSwitchHalfBank(gb, 1, 3);
+		gb->memory.mbcState.mbc6.sramAccess = false;
+		GBMBCSwitchSramHalfBank(gb, 0, 0);
+		GBMBCSwitchSramHalfBank(gb, 0, 1);
+		break;
+	case GB_MMM01:
+		GBMBCSwitchBank0(gb, gb->memory.romSize / GB_SIZE_CART_BANK0 - 2);
+		GBMBCSwitchBank(gb, gb->memory.romSize / GB_SIZE_CART_BANK0 - 1);
+		break;
 	default:
-		memset(&gb->memory.mbcState, 0, sizeof(gb->memory.mbcState));
+		break;
 	}
-
-	GBMBCInit(gb);
 	gb->memory.sramBank = gb->memory.sram;
 
 	if (!gb->memory.wram) {
@@ -209,14 +233,21 @@ uint8_t GBLoad8(struct LR35902Core* cpu, uint16_t address) {
 	case GB_REGION_CART_BANK0 + 2:
 	case GB_REGION_CART_BANK0 + 3:
 		return memory->romBase[address & (GB_SIZE_CART_BANK0 - 1)];
-	case GB_REGION_CART_BANK1:
-	case GB_REGION_CART_BANK1 + 1:
 	case GB_REGION_CART_BANK1 + 2:
 	case GB_REGION_CART_BANK1 + 3:
+		if (memory->mbcType == GB_MBC6) {
+			return memory->mbcState.mbc6.romBank1[address & (GB_SIZE_CART_HALFBANK - 1)];
+		}
+		// Fall through
+	case GB_REGION_CART_BANK1:
+	case GB_REGION_CART_BANK1 + 1:
 		return memory->romBank[address & (GB_SIZE_CART_BANK0 - 1)];
 	case GB_REGION_VRAM:
 	case GB_REGION_VRAM + 1:
-		return gb->video.vramBank[address & (GB_SIZE_VRAM_BANK0 - 1)];
+		if (gb->video.mode != 3) {
+			return gb->video.vramBank[address & (GB_SIZE_VRAM_BANK0 - 1)];
+		}
+		return 0xFF;
 	case GB_REGION_EXTERNAL_RAM:
 	case GB_REGION_EXTERNAL_RAM + 1:
 		if (memory->rtcAccess) {
@@ -286,8 +317,10 @@ void GBStore8(struct LR35902Core* cpu, uint16_t address, int8_t value) {
 		return;
 	case GB_REGION_VRAM:
 	case GB_REGION_VRAM + 1:
-		gb->video.renderer->writeVRAM(gb->video.renderer, (address & (GB_SIZE_VRAM_BANK0 - 1)) | (GB_SIZE_VRAM_BANK0 * gb->video.vramCurrentBank));
-		gb->video.vramBank[address & (GB_SIZE_VRAM_BANK0 - 1)] = value;
+		if (gb->video.mode != 3) {
+			gb->video.renderer->writeVRAM(gb->video.renderer, (address & (GB_SIZE_VRAM_BANK0 - 1)) | (GB_SIZE_VRAM_BANK0 * gb->video.vramCurrentBank));
+			gb->video.vramBank[address & (GB_SIZE_VRAM_BANK0 - 1)] = value;
+		}
 		return;
 	case GB_REGION_EXTERNAL_RAM:
 	case GB_REGION_EXTERNAL_RAM + 1:
@@ -295,8 +328,8 @@ void GBStore8(struct LR35902Core* cpu, uint16_t address, int8_t value) {
 			memory->rtcRegs[memory->activeRtcReg] = value;
 		} else if (memory->sramAccess && memory->sram && memory->mbcType != GB_MBC2) {
 			memory->sramBank[address & (GB_SIZE_EXTERNAL_RAM - 1)] = value;
-		} else if (memory->mbcType == GB_MBC7) {
-			GBMBC7Write(memory, address, value);
+		} else {
+			memory->mbcWrite(gb, address, value);
 		}
 		gb->sramDirty |= GB_SRAM_DIRT_NEW;
 		return;
@@ -467,7 +500,7 @@ uint8_t GBMemoryWriteHDMA5(struct GB* gb, uint8_t value) {
 	gb->memory.hdmaDest |= 0x8000;
 	bool wasHdma = gb->memory.isHdma;
 	gb->memory.isHdma = value & 0x80;
-	if ((!wasHdma && !gb->memory.isHdma) || gb->video.mode == 0) {
+	if ((!wasHdma && !gb->memory.isHdma) || (GBRegisterLCDCIsEnable(gb->memory.io[REG_LCDC]) && gb->video.mode == 0)) {
 		if (gb->memory.isHdma) {
 			gb->memory.hdmaRemaining = 0x10;
 		} else {
@@ -660,6 +693,10 @@ void GBMemorySerialize(const struct GB* gb, struct GBSerializedState* state) {
 		STORE_16LE(memory->mbcState.mbc7.sr, 0, &state->memory.mbc7.sr);
 		STORE_32LE(memory->mbcState.mbc7.writable, 0, &state->memory.mbc7.writable);
 		break;
+	case GB_MMM01:
+		state->memory.mmm01.locked = memory->mbcState.mmm01.locked;
+		state->memory.mmm01.bank0 = memory->mbcState.mmm01.currentBank0;
+		break;
 	default:
 		break;
 	}
@@ -726,6 +763,15 @@ void GBMemoryDeserialize(struct GB* gb, const struct GBSerializedState* state) {
 		memory->mbcState.mbc7.srBits = state->memory.mbc7.srBits;
 		LOAD_16LE(memory->mbcState.mbc7.sr, 0, &state->memory.mbc7.sr);
 		LOAD_32LE(memory->mbcState.mbc7.writable, 0, &state->memory.mbc7.writable);
+		break;
+	case GB_MMM01:
+		memory->mbcState.mmm01.locked = state->memory.mmm01.locked;
+		memory->mbcState.mmm01.currentBank0 = state->memory.mmm01.bank0;
+		if (memory->mbcState.mmm01.locked) {
+			GBMBCSwitchBank0(gb, memory->mbcState.mmm01.currentBank0);
+		} else {
+			GBMBCSwitchBank0(gb, gb->memory.romSize / GB_SIZE_CART_BANK0 - 2);
+		}
 		break;
 	default:
 		break;

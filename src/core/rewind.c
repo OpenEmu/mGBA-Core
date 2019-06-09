@@ -19,6 +19,9 @@ THREAD_ENTRY _rewindThread(void* context);
 #endif
 
 void mCoreRewindContextInit(struct mCoreRewindContext* context, size_t entries, bool onThread) {
+	if (context->currentState) {
+		return;
+	}
 	mCoreRewindPatchesInit(&context->patchMemory, entries);
 	size_t e;
 	for (e = 0; e < entries; ++e) {
@@ -27,7 +30,6 @@ void mCoreRewindContextInit(struct mCoreRewindContext* context, size_t entries, 
 	context->previousState = VFileMemChunk(0, 0);
 	context->currentState = VFileMemChunk(0, 0);
 	context->size = 0;
-	context->stateFlags = SAVESTATE_SAVEDATA;
 #ifndef DISABLE_THREADING
 	context->onThread = onThread;
 	context->ready = false;
@@ -42,6 +44,9 @@ void mCoreRewindContextInit(struct mCoreRewindContext* context, size_t entries, 
 }
 
 void mCoreRewindContextDeinit(struct mCoreRewindContext* context) {
+	if (!context->currentState) {
+		return;
+	}
 #ifndef DISABLE_THREADING
 	if (context->onThread) {
 		MutexLock(&context->mutex);
@@ -55,6 +60,8 @@ void mCoreRewindContextDeinit(struct mCoreRewindContext* context) {
 #endif
 	context->previousState->close(context->previousState);
 	context->currentState->close(context->currentState);
+	context->previousState = NULL;
+	context->currentState = NULL;
 	size_t s;
 	for (s = 0; s < mCoreRewindPatchesSize(&context->patchMemory); ++s) {
 		deinitPatchFast(mCoreRewindPatchesGetPointer(&context->patchMemory, s));
@@ -69,7 +76,7 @@ void mCoreRewindAppend(struct mCoreRewindContext* context, struct mCore* core) {
 	}
 #endif
 	struct VFile* nextState = context->previousState;
-	mCoreSaveStateNamed(core, nextState, context->stateFlags);
+	mCoreSaveStateNamed(core, nextState, SAVESTATE_SAVEDATA | SAVESTATE_RTC);
 	context->previousState = context->currentState;
 	context->currentState = nextState;
 #ifndef DISABLE_THREADING
@@ -123,7 +130,7 @@ bool mCoreRewindRestore(struct mCoreRewindContext* context, struct mCore* core) 
 	}
 	--context->size;
 
-	mCoreLoadStateNamed(core, context->previousState, context->stateFlags);
+	mCoreLoadStateNamed(core, context->previousState, SAVESTATE_SAVEDATA | SAVESTATE_RTC);
 	if (context->current == 0) {
 		context->current = mCoreRewindPatchesSize(&context->patchMemory);
 	}

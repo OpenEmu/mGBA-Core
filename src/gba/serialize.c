@@ -61,6 +61,7 @@ void GBASerialize(struct GBA* gba, struct GBASerializedState* state) {
 
 	GBASerializedMiscFlags miscFlags = 0;
 	miscFlags = GBASerializedMiscFlagsSetHalted(miscFlags, gba->cpu->halted);
+	miscFlags = GBASerializedMiscFlagsSetPOSTFLG(miscFlags, gba->memory.io[REG_POSTFLG >> 1] & 1);
 	STORE_32(miscFlags, 0, &state->miscFlags);
 
 	GBAMemorySerialize(&gba->memory, state);
@@ -128,6 +129,8 @@ bool GBADeserialize(struct GBA* gba, const struct GBASerializedState* state) {
 		return false;
 	}
 	gba->timing.root = NULL;
+	LOAD_32(gba->timing.masterCycles, 0, &state->masterCycles);
+
 	size_t i;
 	for (i = 0; i < 16; ++i) {
 		LOAD_32(gba->cpu->gprs[i], i * sizeof(gba->cpu->gprs[0]), state->cpu.gprs);
@@ -175,6 +178,7 @@ bool GBADeserialize(struct GBA* gba, const struct GBASerializedState* state) {
 	GBASerializedMiscFlags miscFlags = 0;
 	LOAD_32(miscFlags, 0, &state->miscFlags);
 	gba->cpu->halted = GBASerializedMiscFlagsGetHalted(miscFlags);
+	gba->memory.io[REG_POSTFLG >> 1] = GBASerializedMiscFlagsGetPOSTFLG(miscFlags);
 
 	GBAVideoDeserialize(&gba->video, state);
 	GBAMemoryDeserialize(&gba->memory, state);
@@ -185,5 +189,9 @@ bool GBADeserialize(struct GBA* gba, const struct GBASerializedState* state) {
 	if (gba->rr) {
 		gba->rr->stateLoaded(gba->rr, state);
 	}
+
+	gba->timing.reroot = gba->timing.root;
+	gba->timing.root = NULL;
+
 	return true;
 }

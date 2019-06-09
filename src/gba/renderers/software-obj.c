@@ -9,9 +9,6 @@
 	SPRITE_YBASE_ ## DEPTH(inY); \
 	unsigned tileData; \
 	for (; outX < condition; ++outX, inX += xOffset) { \
-		if (!(renderer->row[outX] & FLAG_UNWRITTEN)) { \
-			continue; \
-		} \
 		renderer->spriteCyclesRemaining -= 1; \
 		SPRITE_XBASE_ ## DEPTH(inX); \
 		SPRITE_DRAW_PIXEL_ ## DEPTH ## _ ## TYPE(inX); \
@@ -147,6 +144,7 @@ int GBAVideoSoftwareRendererPreprocessSprite(struct GBAVideoSoftwareRenderer* re
 	}
 	int32_t x = (uint32_t) GBAObjAttributesBGetX(sprite->b) << 23;
 	x >>= 23;
+	x += renderer->objOffsetX;
 	uint16_t* vramBase = &renderer->d.vram[BASE_TILE >> 1];
 	bool align = GBAObjAttributesAIs256Color(sprite->a) && !GBARegisterDISPCNTIsObjCharacterMapping(renderer->dispcnt);
 	unsigned charBase = (GBAObjAttributesCGetTile(sprite->c) & ~align) * 0x20;
@@ -185,14 +183,13 @@ int GBAVideoSoftwareRendererPreprocessSprite(struct GBAVideoSoftwareRenderer* re
 		}
 	}
 
-	int inY = y - (int) GBAObjAttributesAGetY(sprite->a);
+	int inY = y - ((int) GBAObjAttributesAGetY(sprite->a) + renderer->objOffsetY);
 	int stride = GBARegisterDISPCNTIsObjCharacterMapping(renderer->dispcnt) ? (width >> !GBAObjAttributesAIs256Color(sprite->a)) : 0x80;
 
 	uint32_t current;
 	if (GBAObjAttributesAIsTransformed(sprite->a)) {
 		int totalWidth = width << GBAObjAttributesAGetDoubleSize(sprite->a);
 		int totalHeight = height << GBAObjAttributesAGetDoubleSize(sprite->a);
-		renderer->spriteCyclesRemaining -= 10;
 		struct GBAOAMMatrix mat;
 		LOAD_16(mat.a, 0, &renderer->d.oam->mat[GBAObjAttributesBGetMatIndex(sprite->b)].a);
 		LOAD_16(mat.b, 0, &renderer->d.oam->mat[GBAObjAttributesBGetMatIndex(sprite->b)].b);
@@ -252,6 +249,7 @@ int GBAVideoSoftwareRendererPreprocessSprite(struct GBAVideoSoftwareRenderer* re
 		if (outX < start || outX >= condition) {
 			return 0;
 		}
+		renderer->spriteCyclesRemaining -= 10;
 
 		if (!GBAObjAttributesAIs256Color(sprite->a)) {
 			palette = &palette[GBAObjAttributesCGetPalette(sprite->c) << 4];
@@ -272,7 +270,7 @@ int GBAVideoSoftwareRendererPreprocessSprite(struct GBAVideoSoftwareRenderer* re
 				SPRITE_TRANSFORMED_LOOP(256, NORMAL);
 			}
 		}
-		if (x + totalWidth > VIDEO_HORIZONTAL_PIXELS) {
+		if (end == VIDEO_HORIZONTAL_PIXELS && x + totalWidth > VIDEO_HORIZONTAL_PIXELS) {
 			renderer->spriteCyclesRemaining -= (x + totalWidth - VIDEO_HORIZONTAL_PIXELS) * 2;
 		}
 	} else {
@@ -332,7 +330,7 @@ int GBAVideoSoftwareRendererPreprocessSprite(struct GBAVideoSoftwareRenderer* re
 				SPRITE_NORMAL_LOOP(256, NORMAL);
 			}
 		}
-		if (x + width > VIDEO_HORIZONTAL_PIXELS) {
+		if (end == VIDEO_HORIZONTAL_PIXELS && x + width > VIDEO_HORIZONTAL_PIXELS) {
 			renderer->spriteCyclesRemaining -= x + width - VIDEO_HORIZONTAL_PIXELS;
 		}
 	}

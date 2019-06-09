@@ -179,7 +179,7 @@ void mCoreConfigMakePortable(const struct mCoreConfig* config) {
 	WideCharToMultiByte(CP_UTF8, 0, wpath, -1, out, MAX_PATH, 0, 0);
 	StringCchCatA(out, MAX_PATH, "\\portable.ini");
 	portable = VFileOpen(out, O_WRONLY | O_CREAT);
-#elif defined(PSP2) || defined(_3DS) || defined(GEKKO)
+#elif defined(PSP2) || defined(_3DS) || defined(__SWITCH__) || defined(GEKKO)
 	// Already portable
 #else
 	char out[PATH_MAX];
@@ -219,7 +219,7 @@ void mCoreConfigDirectory(char* out, size_t outLength) {
 	UNUSED(portable);
 	snprintf(out, outLength, "ux0:data/%s", projectName);
 	sceIoMkdir(out, 0777);
-#elif defined(GEKKO)
+#elif defined(GEKKO) || defined(__SWITCH__)
 	UNUSED(portable);
 	snprintf(out, outLength, "/%s", projectName);
 	mkdir(out, 0777);
@@ -331,7 +331,6 @@ void mCoreConfigMap(const struct mCoreConfig* config, struct mCoreOptions* opts)
 	_lookupIntValue(config, "frameskip", &opts->frameskip);
 	_lookupIntValue(config, "volume", &opts->volume);
 	_lookupIntValue(config, "rewindBufferCapacity", &opts->rewindBufferCapacity);
-	_lookupIntValue(config, "rewindSave", &opts->rewindSave);
 	_lookupFloatValue(config, "fpsTarget", &opts->fpsTarget);
 	unsigned audioBuffers;
 	if (_lookupUIntValue(config, "audioBuffers", &audioBuffers)) {
@@ -379,6 +378,7 @@ void mCoreConfigMap(const struct mCoreConfig* config, struct mCoreOptions* opts)
 	_lookupCharValue(config, "savestatePath", &opts->savestatePath);
 	_lookupCharValue(config, "screenshotPath", &opts->screenshotPath);
 	_lookupCharValue(config, "patchPath", &opts->patchPath);
+	_lookupCharValue(config, "cheatsPath", &opts->cheatsPath);
 }
 
 void mCoreConfigLoadDefaults(struct mCoreConfig* config, const struct mCoreOptions* opts) {
@@ -390,7 +390,6 @@ void mCoreConfigLoadDefaults(struct mCoreConfig* config, const struct mCoreOptio
 	ConfigurationSetIntValue(&config->defaultsTable, 0, "frameskip", opts->frameskip);
 	ConfigurationSetIntValue(&config->defaultsTable, 0, "rewindEnable", opts->rewindEnable);
 	ConfigurationSetIntValue(&config->defaultsTable, 0, "rewindBufferCapacity", opts->rewindBufferCapacity);
-	ConfigurationSetIntValue(&config->defaultsTable, 0, "rewindSave", opts->rewindSave);
 	ConfigurationSetFloatValue(&config->defaultsTable, 0, "fpsTarget", opts->fpsTarget);
 	ConfigurationSetUIntValue(&config->defaultsTable, 0, "audioBuffers", opts->audioBuffers);
 	ConfigurationSetUIntValue(&config->defaultsTable, 0, "sampleRate", opts->sampleRate);
@@ -443,10 +442,12 @@ void mCoreConfigFreeOpts(struct mCoreOptions* opts) {
 	free(opts->savestatePath);
 	free(opts->screenshotPath);
 	free(opts->patchPath);
+	free(opts->cheatsPath);
 	opts->bios = 0;
 	opts->shader = 0;
 	opts->savegamePath = 0;
 	opts->savestatePath = 0;
 	opts->screenshotPath = 0;
 	opts->patchPath = 0;
+	opts->cheatsPath = 0;
 }

@@ -84,6 +84,7 @@ enum GBIORegisters {
 	REG_WX = 0x4B,
 
 	// CGB
+	REG_UNK4C = 0x4C,
 	REG_KEY1 = 0x4D,
 	REG_VBK = 0x4F,
 	REG_HDMA1 = 0x51,
@@ -102,8 +103,8 @@ enum GBIORegisters {
 	REG_UNK73 = 0x73,
 	REG_UNK74 = 0x74,
 	REG_UNK75 = 0x75,
-	REG_UNK76 = 0x76,
-	REG_UNK77 = 0x77,
+	REG_PCM12 = 0x76,
+	REG_PCM34 = 0x77,
 	REG_MAX = 0x100
 };
 

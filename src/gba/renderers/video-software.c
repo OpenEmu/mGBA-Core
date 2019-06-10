@@ -539,6 +539,14 @@ static void GBAVideoSoftwareRendererDrawScanline(struct GBAVideoRenderer* render
 		dirty = true;
 	}
 
+	if (GBARegisterDISPCNTGetMode(softwareRenderer->dispcnt) != 0) {
+		if (softwareRenderer->cache[y].scale[0][0] != softwareRenderer->bg[2].sx ||
+		    softwareRenderer->cache[y].scale[0][1] != softwareRenderer->bg[2].sy ||
+		    softwareRenderer->cache[y].scale[1][0] != softwareRenderer->bg[3].sx ||
+		    softwareRenderer->cache[y].scale[1][1] != softwareRenderer->bg[3].sy) {
+			dirty = true;
+		}
+	}
 	softwareRenderer->cache[y].scale[0][0] = softwareRenderer->bg[2].sx;
 	softwareRenderer->cache[y].scale[0][1] = softwareRenderer->bg[2].sy;
 	softwareRenderer->cache[y].scale[1][0] = softwareRenderer->bg[3].sx;
@@ -823,11 +831,17 @@ static void _drawScanline(struct GBAVideoSoftwareRenderer* renderer, int y) {
 			struct GBAVideoSoftwareSprite* sprite = &renderer->sprites[i];
 			int localY = y;
 			renderer->end = 0;
+			if ((y < sprite->y && (sprite->endY - 256 < 0 || y >= sprite->endY - 256)) || y >= sprite->endY) {
+				continue;
+			}
 			if (GBAObjAttributesAIsMosaic(sprite->obj.a)) {
 				localY = mosaicY;
-			}
-			if ((localY < sprite->y && (sprite->endY - 256 < 0 || localY >= sprite->endY - 256)) || localY >= sprite->endY) {
-				continue;
+				if (localY < sprite->y) {
+					localY = sprite->y;
+				}
+				if (localY >= sprite->endY) {
+					localY = sprite->endY - 1;
+				}
 			}
 			for (w = 0; w < renderer->nWindows; ++w) {
 				if (renderer->spriteCyclesRemaining <= 0) {

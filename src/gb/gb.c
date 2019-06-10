@@ -630,7 +630,7 @@ void GBDetectModel(struct GB* gb) {
 }
 
 void GBUpdateIRQs(struct GB* gb) {
-	int irqs = gb->memory.ie & gb->memory.io[REG_IF];
+	int irqs = gb->memory.ie & gb->memory.io[REG_IF] & 0x1F;
 	if (!irqs) {
 		gb->cpu->irqPending = false;
 		return;
@@ -723,7 +723,7 @@ static void _enableInterrupts(struct mTiming* timing, void* user, uint32_t cycle
 
 void GBHalt(struct LR35902Core* cpu) {
 	struct GB* gb = (struct GB*) cpu->master;
-	if (!(gb->memory.ie & gb->memory.io[REG_IF])) {
+	if (!(gb->memory.ie & gb->memory.io[REG_IF] & 0x1F)) {
 		cpu->cycles = cpu->nextEvent;
 		cpu->halted = true;
 	} else if (gb->model < GB_MODEL_CGB) {

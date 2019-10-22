@@ -119,14 +119,11 @@ static void _writeSGBBits(struct GB* gb, int bits) {
 	if (gb->sgbBit > 128) {
 		switch (bits) {
 		case 1:
-			gb->sgbBit |= 2;
-			break;
-		case 2:
-			gb->sgbBit |= 4;
+			gb->sgbBit ^= 2;
 			break;
 		case 3:
-			if (gb->sgbBit == 135) {
-				gb->sgbBit &= ~6;
+			if (gb->sgbBit == 131) {
+				gb->sgbBit &= ~2;
 				gb->sgbCurrentController = (gb->sgbCurrentController + 1) & gb->sgbControllers;
 			}
 			break;
@@ -497,8 +494,8 @@ void GBIOWrite(struct GB* gb, unsigned address, uint8_t value) {
 			case REG_BCPD:
 				if (gb->video.mode != 3) {
 					GBVideoProcessDots(&gb->video, 0);
-					GBVideoWritePalette(&gb->video, address, value);
 				}
+				GBVideoWritePalette(&gb->video, address, value);
 				return;
 			case REG_OCPS:
 				gb->video.ocpIndex = value & 0x3F;
@@ -508,8 +505,8 @@ void GBIOWrite(struct GB* gb, unsigned address, uint8_t value) {
 			case REG_OCPD:
 				if (gb->video.mode != 3) {
 					GBVideoProcessDots(&gb->video, 0);
-					GBVideoWritePalette(&gb->video, address, value);
 				}
+				GBVideoWritePalette(&gb->video, address, value);
 				return;
 			case REG_SVBK:
 				GBMemorySwitchWramBank(&gb->memory, value);

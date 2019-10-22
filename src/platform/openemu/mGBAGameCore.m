@@ -87,6 +87,7 @@ const char* const binaryName = "mGBA";
 
 - (void)dealloc
 {
+    mCoreConfigDeinit(&core->config);
 	core->deinit(core);
 	//[cheatSets release];
 	free(outputBuffer);

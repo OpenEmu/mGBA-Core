@@ -25,6 +25,8 @@
 #include <mgba-util/elf-read.h>
 #endif
 
+#define GBA_IRQ_DELAY 7
+
 mLOG_DEFINE_CATEGORY(GBA, "GBA", "gba");
 mLOG_DEFINE_CATEGORY(GBA_DEBUG, "GBA Debug", "gba.debug");
 
@@ -44,6 +46,9 @@ static void GBAProcessEvents(struct ARMCore* cpu);
 static void GBAHitStub(struct ARMCore* cpu, uint32_t opcode);
 static void GBAIllegal(struct ARMCore* cpu, uint32_t opcode);
 static void GBABreakpoint(struct ARMCore* cpu, int immediate);
+static void GBATestIRQNoDelay(struct ARMCore* cpu);
+
+static void _triggerIRQ(struct mTiming*, void* user, uint32_t cyclesLate);
 
 #ifdef USE_DEBUGGERS
 static bool _setSoftwareBreakpoint(struct ARMDebugger*, uint32_t address, enum ExecutionMode mode, uint32_t* opcode);
@@ -86,7 +91,6 @@ static void GBAInit(void* cpu, struct mCPUComponent* component) {
 
 	GBAHardwareInit(&gba->memory.hw, NULL);
 
-	gba->springIRQ = 0;
 	gba->keySource = 0;
 	gba->rotationSource = 0;
 	gba->luminanceSource = 0;
@@ -116,6 +120,11 @@ static void GBAInit(void* cpu, struct mCPUComponent* component) {
 	gba->yankedRomSize = 0;
 
 	mTimingInit(&gba->timing, &gba->cpu->cycles, &gba->cpu->nextEvent);
+
+	gba->irqEvent.name = "GBA IRQ Event";
+	gba->irqEvent.callback = _triggerIRQ;
+	gba->irqEvent.context = gba;
+	gba->irqEvent.priority = 0;
 }
 
 void GBAUnloadROM(struct GBA* gba) {
@@ -172,7 +181,7 @@ void GBAInterruptHandlerInit(struct ARMInterruptHandler* irqh) {
 	irqh->swi16 = GBASwi16;
 	irqh->swi32 = GBASwi32;
 	irqh->hitIllegal = GBAIllegal;
-	irqh->readCPSR = GBATestIRQ;
+	irqh->readCPSR = GBATestIRQNoDelay;
 	irqh->hitStub = GBAHitStub;
 	irqh->bkpt16 = GBABreakpoint;
 	irqh->bkpt32 = GBABreakpoint;
@@ -208,6 +217,20 @@ void GBAReset(struct ARMCore* cpu) {
 
 	GBASIOReset(&gba->sio);
 
+	bool isELF = false;
+#ifdef USE_ELF
+	struct ELF* elf = ELFOpen(gba->romVf);
+	if (elf) {
+		isELF = true;
+		ELFClose(elf);
+	}
+#endif
+
+	if (GBAIsMB(gba->romVf) && !isELF) {
+		gba->romVf->seek(gba->romVf, 0, SEEK_SET);
+		gba->romVf->read(gba->romVf, gba->memory.wram, gba->pristineRomSize);
+	}
+
 	gba->lastJump = 0;
 	gba->haltPending = false;
 	gba->idleDetectionStep = 0;
@@ -215,8 +238,16 @@ void GBAReset(struct ARMCore* cpu) {
 
 	gba->debug = false;
 	memset(gba->debugString, 0, sizeof(gba->debugString));
-	if (gba->pristineRomSize > SIZE_CART0) {
-		GBAMatrixReset(gba);
+
+
+	if (gba->romVf && gba->pristineRomSize > SIZE_CART0) {
+		char ident;
+		gba->romVf->seek(gba->romVf, 0xAC, SEEK_SET);
+		gba->romVf->read(gba->romVf, &ident, 1);
+		gba->romVf->seek(gba->romVf, 0, SEEK_SET);
+		if (ident == 'M') {
+			GBAMatrixReset(gba);
+		}
 	}
 }
 
@@ -231,8 +262,7 @@ void GBASkipBIOS(struct GBA* gba) {
 		gba->video.vcount = 0x7D;
 		gba->memory.io[REG_VCOUNT >> 1] = 0x7D;
 		gba->memory.io[REG_POSTFLG >> 1] = 1;
-		int currentCycles = 0;
-		ARM_WRITE_PC;
+		ARMWritePC(cpu);
 	}
 }
 
@@ -242,11 +272,6 @@ static void GBAProcessEvents(struct ARMCore* cpu) {
 	gba->bus = cpu->prefetch[1];
 	if (cpu->executionMode == MODE_THUMB) {
 		gba->bus |= cpu->prefetch[1] << 16;
-	}
-
-	if (gba->springIRQ && !cpu->cpsr.i) {
-		ARMRaiseIRQ(cpu);
-		gba->springIRQ = 0;
 	}
 
 	int32_t nextEvent = cpu->nextEvent;
@@ -339,11 +364,6 @@ bool GBALoadMB(struct GBA* gba, struct VFile* vf) {
 	}
 	gba->isPristine = true;
 	memset(gba->memory.wram, 0, SIZE_WORKING_RAM);
-	vf->read(vf, gba->memory.wram, gba->pristineRomSize);
-	if (!gba->memory.wram) {
-		mLOG(GBA, WARN, "Couldn't map ROM");
-		return false;
-	}
 	gba->yankedRomSize = 0;
 	gba->memory.romSize = 0;
 	gba->memory.romMask = 0;
@@ -364,22 +384,23 @@ bool GBALoadROM(struct GBA* gba, struct VFile* vf) {
 	vf->seek(vf, 0, SEEK_SET);
 	if (gba->pristineRomSize > SIZE_CART0) {
 		gba->isPristine = false;
-		gba->memory.romSize = 0x01000000;
+		char ident;
+		vf->seek(vf, 0xAC, SEEK_SET);
+		vf->read(vf, &ident, 1);
+		if (ident == 'M') {
+			gba->memory.romSize = 0x01000000;
 #ifdef FIXED_ROM_BUFFER
-		gba->memory.rom = romBuffer;
+			gba->memory.rom = romBuffer;
 #else
-		gba->memory.rom = anonymousMemoryMap(SIZE_CART0);
+			gba->memory.rom = anonymousMemoryMap(SIZE_CART0);
 #endif
+		} else {
+			gba->memory.rom = vf->map(vf, SIZE_CART0, MAP_READ);
+			gba->memory.romSize = SIZE_CART0;
+		}
 	} else {
 		gba->isPristine = true;
-#ifdef FIXED_ROM_BUFFER
-		if (gba->pristineRomSize <= romBufferSize) {
-			gba->memory.rom = romBuffer;
-			vf->read(vf, romBuffer, gba->pristineRomSize);
-		}
-#else
 		gba->memory.rom = vf->map(vf, gba->pristineRomSize, MAP_READ);
-#endif
 		gba->memory.romSize = gba->pristineRomSize;
 	}
 	if (!gba->memory.rom) {
@@ -419,7 +440,7 @@ void GBAYankROM(struct GBA* gba) {
 	gba->yankedRomSize = gba->memory.romSize;
 	gba->memory.romSize = 0;
 	gba->memory.romMask = 0;
-	GBARaiseIRQ(gba, IRQ_GAMEPAK);
+	GBARaiseIRQ(gba, IRQ_GAMEPAK, 0);
 }
 
 void GBALoadBIOS(struct GBA* gba, struct VFile* vf) {
@@ -472,34 +493,21 @@ void GBAApplyPatch(struct GBA* gba, struct Patch* patch) {
 	gba->romCrc32 = doCrc32(gba->memory.rom, gba->memory.romSize);
 }
 
-void GBAWriteIE(struct GBA* gba, uint16_t value) {
-	if (gba->memory.io[REG_IME >> 1] && value & gba->memory.io[REG_IF >> 1]) {
-		ARMRaiseIRQ(gba->cpu);
-	}
-}
-
-void GBAWriteIME(struct GBA* gba, uint16_t value) {
-	if (value && gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1]) {
-		ARMRaiseIRQ(gba->cpu);
-	}
-}
-
-void GBARaiseIRQ(struct GBA* gba, enum GBAIRQ irq) {
+void GBARaiseIRQ(struct GBA* gba, enum GBAIRQ irq, uint32_t cyclesLate) {
 	gba->memory.io[REG_IF >> 1] |= 1 << irq;
-
-	if (gba->memory.io[REG_IE >> 1] & 1 << irq) {
-		gba->cpu->halted = 0;
-		if (gba->memory.io[REG_IME >> 1]) {
-			ARMRaiseIRQ(gba->cpu);
-		}
-	}
+	GBATestIRQ(gba, cyclesLate);
 }
 
-void GBATestIRQ(struct ARMCore* cpu) {
+void GBATestIRQNoDelay(struct ARMCore* cpu) {
 	struct GBA* gba = (struct GBA*) cpu->master;
-	if (gba->memory.io[REG_IME >> 1] && gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1]) {
-		gba->springIRQ = gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1];
-		gba->cpu->nextEvent = gba->cpu->cycles;
+	GBATestIRQ(gba, 0);
+}
+
+void GBATestIRQ(struct GBA* gba, uint32_t cyclesLate) {
+	if (gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1]) {
+		if (!mTimingIsScheduled(&gba->timing, &gba->irqEvent)) {
+			mTimingSchedule(&gba->timing, &gba->irqEvent, GBA_IRQ_DELAY - cyclesLate);
+		}
 	}
 }
 
@@ -528,7 +536,7 @@ void GBADebug(struct GBA* gba, uint16_t flags) {
 		strncpy(oolBuf, gba->debugString, sizeof(oolBuf) - 1);
 		memset(gba->debugString, 0, sizeof(gba->debugString));
 		oolBuf[0x100] = '\0';
-		mLog(_mLOG_CAT_GBA_DEBUG(), level, "%s", oolBuf);
+		mLog(_mLOG_CAT_GBA_DEBUG, level, "%s", oolBuf);
 	}
 	gba->debugFlags = GBADebugFlagsClearSend(gba->debugFlags);
 }
@@ -756,7 +764,8 @@ void GBABreakpoint(struct ARMCore* cpu, int immediate) {
 		if (gba->debugger) {
 			struct mDebuggerEntryInfo info = {
 				.address = _ARMPCAddress(cpu),
-				.type.bp.breakType = BREAKPOINT_SOFTWARE
+				.type.bp.breakType = BREAKPOINT_SOFTWARE,
+				.pointId = -1
 			};
 			mDebuggerEnter(gba->debugger->d.p, DEBUGGER_ENTER_BREAKPOINT, &info);
 		}
@@ -786,6 +795,10 @@ void GBABreakpoint(struct ARMCore* cpu, int immediate) {
 
 void GBAFrameStarted(struct GBA* gba) {
 	GBATestKeypadIRQ(gba);
+
+	if (gba->audio.mixer) {
+		gba->audio.mixer->vblank(gba->audio.mixer);
+	}
 
 	size_t c;
 	for (c = 0; c < mCoreCallbacksListSize(&gba->coreCallbacks); ++c) {
@@ -849,9 +862,23 @@ void GBATestKeypadIRQ(struct GBA* gba) {
 	uint16_t keyInput = *gba->keySource & keycnt;
 
 	if (isAnd && keycnt == keyInput) {
-		GBARaiseIRQ(gba, IRQ_KEYPAD);
+		GBARaiseIRQ(gba, IRQ_KEYPAD, 0);
 	} else if (!isAnd && keyInput) {
-		GBARaiseIRQ(gba, IRQ_KEYPAD);
+		GBARaiseIRQ(gba, IRQ_KEYPAD, 0);
+	}
+}
+
+static void _triggerIRQ(struct mTiming* timing, void* user, uint32_t cyclesLate) {
+	UNUSED(timing);
+	UNUSED(cyclesLate);
+	struct GBA* gba = user;
+	gba->cpu->halted = 0;
+	if (!(gba->memory.io[REG_IE >> 1] & gba->memory.io[REG_IF >> 1])) {
+		return;
+	}
+
+	if (gba->memory.io[REG_IME >> 1] && !gba->cpu->cpsr.i) {
+		ARMRaiseIRQ(gba->cpu);
 	}
 }
 

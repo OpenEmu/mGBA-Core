@@ -88,6 +88,9 @@
 		872FC2F922ADBAE300AF67DE /* map-cache.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FC2F822ADBAE300AF67DE /* map-cache.c */; };
 		872FC2FB22ADBBA400AF67DE /* matrix.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FC2FA22ADBBA300AF67DE /* matrix.c */; };
 		872FC2FD22ADBC2600AF67DE /* cache-set.c in Sources */ = {isa = PBXBuildFile; fileRef = 872FC2FC22ADBC2600AF67DE /* cache-set.c */; };
+		87886C76243D1F0800713DE9 /* gbk-table.c in Sources */ = {isa = PBXBuildFile; fileRef = 87886C75243D1F0700713DE9 /* gbk-table.c */; };
+		87886C78243D1FAC00713DE9 /* bitmap-cache.c in Sources */ = {isa = PBXBuildFile; fileRef = 87886C77243D1FAB00713DE9 /* bitmap-cache.c */; };
+		87886C7A243D208A00713DE9 /* common.c in Sources */ = {isa = PBXBuildFile; fileRef = 87886C79243D208A00713DE9 /* common.c */; };
 		87D3809B1D924A9600FC657D /* export.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380991D924A8100FC657D /* export.c */; };
 		87D380A21D924C9900FC657D /* core.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380A01D924C8500FC657D /* core.c */; };
 		87D380AA1D924D2800FC657D /* overrides.c in Sources */ = {isa = PBXBuildFile; fileRef = 87D380A81D924D2000FC657D /* overrides.c */; };
@@ -240,6 +243,9 @@
 		872FC2FA22ADBBA300AF67DE /* matrix.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = matrix.c; sourceTree = "<group>"; };
 		872FC2FC22ADBC2600AF67DE /* cache-set.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "cache-set.c"; sourceTree = "<group>"; };
 		872FC2FE22ADBCFB00AF67DE /* joybus.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = joybus.c; sourceTree = "<group>"; };
+		87886C75243D1F0700713DE9 /* gbk-table.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "gbk-table.c"; sourceTree = "<group>"; };
+		87886C77243D1FAB00713DE9 /* bitmap-cache.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "bitmap-cache.c"; sourceTree = "<group>"; };
+		87886C79243D208A00713DE9 /* common.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = common.c; sourceTree = "<group>"; };
 		87D380911D92489C00FC657D /* cli-debugger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "cli-debugger.c"; sourceTree = "<group>"; };
 		87D380931D92489C00FC657D /* debugger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = debugger.c; sourceTree = "<group>"; };
 		87D380951D92489C00FC657D /* memory-debugger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "memory-debugger.c"; sourceTree = "<group>"; };
@@ -428,6 +434,7 @@
 			isa = PBXGroup;
 			children = (
 				872FC2FC22ADBC2600AF67DE /* cache-set.c */,
+				87886C79243D208A00713DE9 /* common.c */,
 				8701D2F81D19D4A900E8A7D8 /* software-bg.c */,
 				8701D2F91D19D4A900E8A7D8 /* software-mode0.c */,
 				8701D2FA1D19D4A900E8A7D8 /* software-obj.c */,
@@ -523,6 +530,7 @@
 				8701D6BE1D19D4AE00E8A7D8 /* crc32.c */,
 				87D380991D924A8100FC657D /* export.c */,
 				8701D6C01D19D4AE00E8A7D8 /* formatting.c */,
+				87886C75243D1F0700713DE9 /* gbk-table.c */,
 				8701D6C21D19D4AE00E8A7D8 /* gui */,
 				8701D6CB1D19D4AE00E8A7D8 /* gui.c */,
 				8701D6CD1D19D4AE00E8A7D8 /* hash.c */,
@@ -596,6 +604,7 @@
 		87D380B71D92508500FC657D /* core */ = {
 			isa = PBXGroup;
 			children = (
+				87886C77243D1FAB00713DE9 /* bitmap-cache.c */,
 				872FC2F622ADBA9B00AF67DE /* cache-set.c */,
 				87D380B81D92508500FC657D /* cheats.c */,
 				87D380BA1D92508500FC657D /* config.c */,
@@ -787,6 +796,9 @@
 				8701D7101D19E58700E8A7D8 /* ini.c in Sources */,
 				8701D7111D19E5C400E8A7D8 /* circle-buffer.c in Sources */,
 				8701D7121D19E5DE00E8A7D8 /* configuration.c in Sources */,
+				87886C7A243D208A00713DE9 /* common.c in Sources */,
+				87886C78243D1FAC00713DE9 /* bitmap-cache.c in Sources */,
+				87886C76243D1F0800713DE9 /* gbk-table.c in Sources */,
 				8701D7131D19E60200E8A7D8 /* crc32.c in Sources */,
 				87D3809B1D924A9600FC657D /* export.c in Sources */,
 				8701D7141D19E6BC00E8A7D8 /* formatting.c in Sources */,
@@ -852,6 +864,7 @@
 					"-DM_CORE_GBA",
 					"-DDISABLE_THREADING",
 					"-DMINIMAL_CORE=1",
+					"-DMGBA_STANDALONE",
 					"-DHAVE_STRDUP",
 					"-DHAVE_STRNDUP",
 					"-DHAVE_LOCALTIME_R",
@@ -887,6 +900,7 @@
 					"-DM_CORE_GBA",
 					"-DDISABLE_THREADING",
 					"-DMINIMAL_CORE=1",
+					"-DMGBA_STANDALONE",
 					"-DHAVE_STRDUP",
 					"-DHAVE_STRNDUP",
 					"-DHAVE_LOCALTIME_R",

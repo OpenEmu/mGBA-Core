@@ -14,8 +14,6 @@
 typedef ThreadFunc ThreadEntry;
 typedef CondVar Condition;
 
-#define ThreadJoin(T) ThreadJoinPtr(&T)
-
 static inline int MutexInit(Mutex* mutex) {
 	mutexInit(mutex);
 	return 0;
@@ -66,14 +64,14 @@ static inline int ThreadCreate(Thread* thread, ThreadEntry entry, void* context)
 	if (!entry || !thread) {
 		return 1;
 	}
-	int res = threadCreate(thread, entry, context, 0x8000, 0x3B, 1);
+	int res = threadCreate(thread, entry, context, NULL, 0x8000, 0x3B, 1);
 	if(R_FAILED(res)) {
 		return res;
 	}
 	return threadStart(thread);
 }
 
-static inline int ThreadJoinPtr(Thread* thread) {
+static inline int ThreadJoin(Thread* thread) {
 	int res = threadWaitForExit(thread);
 	if(R_FAILED(res)) {
 		return res;

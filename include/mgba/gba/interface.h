@@ -11,6 +11,12 @@
 CXX_GUARD_START
 
 #include <mgba/core/interface.h>
+#include <mgba/core/timing.h>
+
+enum {
+	GBA_VIDEO_HORIZONTAL_PIXELS = 240,
+	GBA_VIDEO_VERTICAL_PIXELS = 160,
+};
 
 enum GBASIOMode {
 	SIO_NORMAL_8 = 0,
@@ -32,12 +38,18 @@ struct GBA;
 struct GBAAudio;
 struct GBASIO;
 struct GBAVideoRenderer;
+struct VFile;
 
-extern const int GBA_LUX_LEVELS[10];
+extern MGBA_EXPORT const int GBA_LUX_LEVELS[10];
 
 enum {
-	mPERIPH_GBA_LUMINANCE = 0x1000
+	mPERIPH_GBA_LUMINANCE = 0x1000,
+	mPERIPH_GBA_BATTLECHIP_GATE,
 };
+
+bool GBAIsROM(struct VFile* vf);
+bool GBAIsMB(struct VFile* vf);
+bool GBAIsBIOS(struct VFile* vf);
 
 struct GBALuminanceSource {
 	void (*sample)(struct GBALuminanceSource*);
@@ -58,6 +70,23 @@ struct GBASIODriver {
 void GBASIOJOYCreate(struct GBASIODriver* sio);
 int GBASIOJOYSendCommand(struct GBASIODriver* sio, enum GBASIOJOYCommand command, uint8_t* data);
 
+enum GBASIOBattleChipGateFlavor {
+	GBA_FLAVOR_BATTLECHIP_GATE = 4,
+	GBA_FLAVOR_PROGRESS_GATE = 5,
+	GBA_FLAVOR_BEAST_LINK_GATE = 6,
+	GBA_FLAVOR_BEAST_LINK_GATE_US = 7,
+};
+
+struct GBASIOBattlechipGate {
+	struct GBASIODriver d;
+	struct mTimingEvent event;
+	uint16_t chipId;
+	uint16_t data[2];
+	int state;
+	int flavor;
+};
+
+void GBASIOBattlechipGateCreate(struct GBASIOBattlechipGate*);
 
 CXX_GUARD_END
 

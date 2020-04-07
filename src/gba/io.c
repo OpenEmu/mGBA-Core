@@ -547,15 +547,18 @@ void GBAIOWrite(struct GBA* gba, uint32_t address, uint16_t value) {
 			GBAAdjustWaitstates(gba, value);
 			break;
 		case REG_IE:
-			GBAWriteIE(gba, value);
-			break;
+			gba->memory.io[REG_IE >> 1] = value;
+			GBATestIRQ(gba, 1);
+			return;
 		case REG_IF:
-			gba->springIRQ &= ~value;
 			value = gba->memory.io[REG_IF >> 1] & ~value;
-			break;
+			gba->memory.io[REG_IF >> 1] = value;
+			GBATestIRQ(gba, 1);
+			return;
 		case REG_IME:
-			GBAWriteIME(gba, value);
-			break;
+			gba->memory.io[REG_IME >> 1] = value;
+			GBATestIRQ(gba, 1);
+			return;
 		case REG_MAX:
 			// Some bad interrupt libraries will write to this
 			break;
@@ -709,19 +712,28 @@ uint16_t GBAIORead(struct GBA* gba, uint32_t address) {
 	switch (address) {
 	// Reading this takes two cycles (1N+1I), so let's remove them preemptively
 	case REG_TM0CNT_LO:
-		GBATimerUpdateRegister(gba, 0, 4);
+		GBATimerUpdateRegister(gba, 0, 2);
 		break;
 	case REG_TM1CNT_LO:
-		GBATimerUpdateRegister(gba, 1, 4);
+		GBATimerUpdateRegister(gba, 1, 2);
 		break;
 	case REG_TM2CNT_LO:
-		GBATimerUpdateRegister(gba, 2, 4);
+		GBATimerUpdateRegister(gba, 2, 2);
 		break;
 	case REG_TM3CNT_LO:
-		GBATimerUpdateRegister(gba, 3, 4);
+		GBATimerUpdateRegister(gba, 3, 2);
 		break;
 
 	case REG_KEYINPUT:
+		{
+			size_t c;
+			for (c = 0; c < mCoreCallbacksListSize(&gba->coreCallbacks); ++c) {
+				struct mCoreCallbacks* callbacks = mCoreCallbacksListGetPointer(&gba->coreCallbacks, c);
+				if (callbacks->keysRead) {
+					callbacks->keysRead(callbacks->context);
+				}
+			}
+		}
 		if (gba->rr && gba->rr->isPlaying(gba->rr)) {
 			return 0x3FF ^ gba->rr->queryInput(gba->rr);
 		} else {
@@ -814,8 +826,10 @@ uint16_t GBAIORead(struct GBA* gba, uint32_t address) {
 	case REG_DMA1CNT_LO:
 	case REG_DMA2CNT_LO:
 	case REG_DMA3CNT_LO:
-		// Write-only register
-		mLOG(GBA_IO, GAME_ERROR, "Read from write-only I/O register: %03X", address);
+		// Many, many things read from the DMA register
+	case REG_MAX:
+		// Some bad interrupt libraries will read from this
+		// (Silent) write-only register
 		return 0;
 
 	case REG_JOY_RECV_LO:
@@ -888,8 +902,6 @@ uint16_t GBAIORead(struct GBA* gba, uint32_t address) {
 	case REG_IME:
 		// Handled transparently by registers
 		break;
-	case REG_MAX:
-		// Some bad interrupt libraries will read from this
 	case 0x066:
 	case 0x06E:
 	case 0x076:
@@ -931,7 +943,6 @@ void GBAIOSerialize(struct GBA* gba, struct GBASerializedState* state) {
 		STORE_16(gba->timers[i].reload, 0, &state->timers[i].reload);
 		STORE_32(gba->timers[i].lastEvent - mTimingCurrentTime(&gba->timing), 0, &state->timers[i].lastEvent);
 		STORE_32(gba->timers[i].event.when - mTimingCurrentTime(&gba->timing), 0, &state->timers[i].nextEvent);
-		STORE_32(gba->timers[i].irq.when - mTimingCurrentTime(&gba->timing), 0, &state->timers[i].nextIrq);
 		STORE_32(gba->timers[i].flags, 0, &state->timers[i].flags);
 		STORE_32(gba->memory.dma[i].nextSource, 0, &state->dma[i].nextSource);
 		STORE_32(gba->memory.dma[i].nextDest, 0, &state->dma[i].nextDest);
@@ -970,10 +981,6 @@ void GBAIODeserialize(struct GBA* gba, const struct GBASerializedState* state) {
 		LOAD_32(when, 0, &state->timers[i].nextEvent);
 		if (GBATimerFlagsIsEnable(gba->timers[i].flags)) {
 			mTimingSchedule(&gba->timing, &gba->timers[i].event, when);
-		}
-		LOAD_32(when, 0, &state->timers[i].nextIrq);
-		if (GBATimerFlagsIsIrqPending(gba->timers[i].flags)) {
-			mTimingSchedule(&gba->timing, &gba->timers[i].irq, when);
 		}
 
 		LOAD_16(gba->memory.dma[i].reg, (REG_DMA0CNT_HI + i * 12), state->io);

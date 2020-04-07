@@ -353,10 +353,10 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 			case REGION_WORKING_IRAM: \
 				/* This doesn't handle prefetch clobbering */ \
 				if (cpu->gprs[ARM_PC] & 2) { \
-					value |= cpu->prefetch[0] << 16; \
-				} else { \
 					value <<= 16; \
 					value |= cpu->prefetch[0]; \
+				} else { \
+					value |= cpu->prefetch[0] << 16; \
 				} \
 				break; \
 			default: \
@@ -568,7 +568,7 @@ uint32_t GBALoad16(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 		break;
 	case REGION_CART2_EX:
 		wait = memory->waitstatesNonseq16[address >> BASE_OFFSET];
-		if (memory->savedata.type == SAVEDATA_EEPROM) {
+		if (memory->savedata.type == SAVEDATA_EEPROM || memory->savedata.type == SAVEDATA_EEPROM512) {
 			value = GBASavedataReadEEPROM(&memory->savedata);
 		} else if ((address & (SIZE_CART0 - 1)) < memory->romSize) {
 			LOAD_16(value, address & (SIZE_CART0 - 2), memory->rom);
@@ -915,7 +915,7 @@ void GBAStore16(struct ARMCore* cpu, uint32_t address, int16_t value, int* cycle
 			mLOG(GBA_MEM, INFO, "Detected EEPROM savegame");
 			GBASavedataInitEEPROM(&memory->savedata);
 		}
-		if (memory->savedata.type == SAVEDATA_EEPROM) {
+		if (memory->savedata.type == SAVEDATA_EEPROM512 || memory->savedata.type == SAVEDATA_EEPROM) {
 			GBASavedataWriteEEPROM(&memory->savedata, value, 1);
 			break;
 		}
@@ -1326,6 +1326,12 @@ void GBAPatch8(struct ARMCore* cpu, uint32_t address, int8_t value, int8_t* old)
 }
 
 #define LDM_LOOP(LDM) \
+	if (UNLIKELY(!mask)) { \
+		LDM; \
+		cpu->gprs[ARM_PC] = value; \
+		wait += 16; \
+		address += 64; \
+	} \
 	for (i = 0; i < 16; i += 4) { \
 		if (UNLIKELY(mask & (1 << i))) { \
 			LDM; \
@@ -1438,6 +1444,12 @@ uint32_t GBALoadMultiple(struct ARMCore* cpu, uint32_t address, int mask, enum L
 }
 
 #define STM_LOOP(STM) \
+	if (UNLIKELY(!mask)) { \
+		value = cpu->gprs[ARM_PC] + (cpu->executionMode == MODE_ARM ? WORD_SIZE_ARM : WORD_SIZE_THUMB); \
+		STM; \
+		wait += 16; \
+		address += 64; \
+	} \
 	for (i = 0; i < 16; i += 4) { \
 		if (UNLIKELY(mask & (1 << i))) { \
 			value = cpu->gprs[i]; \

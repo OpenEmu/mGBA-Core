@@ -950,7 +950,7 @@ void GBAIOSerialize(struct GBA* gba, struct GBASerializedState* state) {
 		STORE_32(gba->memory.dma[i].when, 0, &state->dma[i].when);
 	}
 
-	state->dmaTransferRegister = gba->memory.dmaTransferRegister;
+	STORE_32(gba->memory.dmaTransferRegister, 0, &state->dmaTransferRegister);
 
 	GBAHardwareSerialize(&gba->memory.hw, state);
 }
@@ -988,12 +988,11 @@ void GBAIODeserialize(struct GBA* gba, const struct GBASerializedState* state) {
 		LOAD_32(gba->memory.dma[i].nextDest, 0, &state->dma[i].nextDest);
 		LOAD_32(gba->memory.dma[i].nextCount, 0, &state->dma[i].nextCount);
 		LOAD_32(gba->memory.dma[i].when, 0, &state->dma[i].when);
-		if (GBADMARegisterGetTiming(gba->memory.dma[i].reg) != GBA_DMA_TIMING_NOW) {
-			GBADMASchedule(gba, i, &gba->memory.dma[i]);
-		}
 	}
 	GBAAudioWriteSOUNDCNT_X(&gba->audio, gba->memory.io[REG_SOUNDCNT_X >> 1]);
-	gba->memory.dmaTransferRegister = state->dmaTransferRegister;
+
+	LOAD_32(gba->memory.dmaTransferRegister, 0, &state->dmaTransferRegister);
+
 	GBADMAUpdate(gba);
 	GBAHardwareDeserialize(&gba->memory.hw, state);
 }

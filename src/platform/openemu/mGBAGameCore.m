@@ -57,6 +57,15 @@ const char* const binaryName = "mGBA";
 }
 @end
 
+static void _log(struct mLogger* log,
+                 int category,
+                 enum mLogLevel level,
+                 const char* format,
+                 va_list args)
+{}
+
+static struct mLogger logger = { .log = _log };
+
 @implementation mGBAGameCore
 
 - (id)init
@@ -69,6 +78,10 @@ const char* const binaryName = "mGBA";
 		struct mCoreOptions opts = {
 			.useBios = true,
 		};
+        
+        // Set up a logger. The default logger prints everything to STDOUT, which is not usually desirable.
+        mLogSetDefaultLogger(&logger);
+
 		mCoreConfigLoadDefaults(&core->config, &opts);
 		core->init(core);
 		outputBuffer = nil;

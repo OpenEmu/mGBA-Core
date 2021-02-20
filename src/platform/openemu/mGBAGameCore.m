@@ -123,7 +123,9 @@ static struct mLogger logger = { .log = _log };
 	core->dirs.save = VDirOpen([batterySavesDirectory fileSystemRepresentation]);
 
 	if (!mCoreLoadFile(core, [path fileSystemRepresentation])) {
-		*error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadROMError userInfo:nil];
+		if (error) {
+			*error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadROMError userInfo:nil];
+		}
 		return NO;
 	}
 	mCoreAutoloadSave(core);
@@ -224,7 +226,9 @@ static struct mLogger logger = { .log = _log };
 {
 	struct VFile* vf = VFileMemChunk(nil, 0);
 	if (!mCoreSaveStateNamed(core, vf, SAVESTATE_SAVEDATA)) {
-		*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
+		if (outError) {
+			*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
+		}
 		vf->close(vf);
 		return nil;
 	}
@@ -240,7 +244,9 @@ static struct mLogger logger = { .log = _log };
 {
 	struct VFile* vf = VFileFromConstMemory(state.bytes, state.length);
 	if (!mCoreLoadStateNamed(core, vf, SAVESTATE_SAVEDATA)) {
-		*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
+		if (outError) {
+			*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
+		}
 		vf->close(vf);
 		return NO;
 	}

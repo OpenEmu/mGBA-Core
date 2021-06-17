@@ -43,10 +43,6 @@
 
 #define SAMPLES 1024
 
-#ifdef DEBUG
-    #error "Cores should not be compiled in DEBUG! Follow the guide https://github.com/OpenEmu/OpenEmu/wiki/Compiling-From-Source-Guide"
-#endif
-
 const char* const binaryName = "mGBA";
 
 @interface mGBAGameCore () <OEGBASystemResponderClient>
@@ -56,15 +52,6 @@ const char* const binaryName = "mGBA";
 	NSMutableDictionary *cheatSets;
 }
 @end
-
-static void _log(struct mLogger* log,
-                 int category,
-                 enum mLogLevel level,
-                 const char* format,
-                 va_list args)
-{}
-
-static struct mLogger logger = { .log = _log };
 
 @implementation mGBAGameCore
 
@@ -78,10 +65,6 @@ static struct mLogger logger = { .log = _log };
 		struct mCoreOptions opts = {
 			.useBios = true,
 		};
-        
-        // Set up a logger. The default logger prints everything to STDOUT, which is not usually desirable.
-        mLogSetDefaultLogger(&logger);
-
 		mCoreConfigLoadDefaults(&core->config, &opts);
 		core->init(core);
 		outputBuffer = nil;
@@ -91,7 +74,6 @@ static struct mLogger logger = { .log = _log };
 		outputBuffer = malloc(width * height * BYTES_PER_PIXEL);
 		core->setVideoBuffer(core, outputBuffer, width);
 		core->setAudioBufferSize(core, SAMPLES);
-
 		cheatSets = [[NSMutableDictionary alloc] init];
 	}
 
@@ -100,12 +82,9 @@ static struct mLogger logger = { .log = _log };
 
 - (void)dealloc
 {
-    mCoreConfigDeinit(&core->config);
+	mCoreConfigDeinit(&core->config);
 	core->deinit(core);
-	//[cheatSets release];
 	free(outputBuffer);
-
-	//[super dealloc];
 }
 
 #pragma mark - Execution
@@ -123,14 +102,13 @@ static struct mLogger logger = { .log = _log };
 	core->dirs.save = VDirOpen([batterySavesDirectory fileSystemRepresentation]);
 
 	if (!mCoreLoadFile(core, [path fileSystemRepresentation])) {
-		if (error) {
-			*error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadROMError userInfo:nil];
-		}
+		*error = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadROMError userInfo:nil];
 		return NO;
 	}
 	mCoreAutoloadSave(core);
 
 	core->reset(core);
+
 	return YES;
 }
 
@@ -182,8 +160,7 @@ static struct mLogger logger = { .log = _log };
 {
 	OEIntSize bufferSize = [self bufferSize];
 
-	if (!hint)
-	{
+	if (!hint) {
 		hint = outputBuffer;
 	}
 
@@ -226,9 +203,7 @@ static struct mLogger logger = { .log = _log };
 {
 	struct VFile* vf = VFileMemChunk(nil, 0);
 	if (!mCoreSaveStateNamed(core, vf, SAVESTATE_SAVEDATA)) {
-		if (outError) {
-			*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
-		}
+		*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
 		vf->close(vf);
 		return nil;
 	}
@@ -244,9 +219,7 @@ static struct mLogger logger = { .log = _log };
 {
 	struct VFile* vf = VFileFromConstMemory(state.bytes, state.length);
 	if (!mCoreLoadStateNamed(core, vf, SAVESTATE_SAVEDATA)) {
-		if (outError) {
-			*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
-		}
+		*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
 		vf->close(vf);
 		return NO;
 	}
@@ -315,19 +288,8 @@ const int GBAMap[] = {
 		cheatSet->copyProperties(cheatSet, *mCheatSetsGetPointer(&cheats->cheats, size - 1));
 	}
 	int codeType = GBA_CHEAT_AUTODETECT;
-	// NOTE: This is deprecated and was only meant to test cheats with the UI using cheats-database.xml
-	// Will be replaced with a sqlite database in the future.
-//    if ([type isEqual:@"GameShark"]) {
-//        codeType = GBA_CHEAT_GAMESHARK;
-//    } else if ([type isEqual:@"Action Replay"]) {
-//        codeType = GBA_CHEAT_PRO_ACTION_REPLAY;
-//    }
 	NSArray *codeSet = [code componentsSeparatedByString:@"+"];
 	for (id c in codeSet) {
-//        if ([c length] == 12)
-//            codeType = GBA_CHEAT_CODEBREAKER;
-//        if ([c length] == 16) // default to GS/AR v1/v2 code (can't determine GS/AR v1/v2 vs AR v3 because same length)
-//            codeType = GBA_CHEAT_GAMESHARK;
 		mCheatAddLine(cheatSet, [c UTF8String], codeType);
 	}
 	cheatSet->enabled = enabled;

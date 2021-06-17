@@ -50,6 +50,11 @@ static const struct GBACartridgeOverride _overrides[] = {
 	{ "V49J", SAVEDATA_SRAM, HW_RUMBLE, IDLE_LOOP_NONE, false },
 	{ "V49E", SAVEDATA_SRAM, HW_RUMBLE, IDLE_LOOP_NONE, false },
 
+	// e-Reader
+	{ "PEAJ", SAVEDATA_FLASH1M, HW_EREADER, IDLE_LOOP_NONE },
+	{ "PSAJ", SAVEDATA_FLASH1M, HW_EREADER, IDLE_LOOP_NONE },
+	{ "PSAE", SAVEDATA_FLASH1M, HW_EREADER, IDLE_LOOP_NONE },
+
 	// Final Fantasy Tactics Advance
 	{ "AFXE", SAVEDATA_FLASH512, HW_NONE, 0x8000428, false },
 
@@ -81,12 +86,6 @@ static const struct GBACartridgeOverride _overrides[] = {
 
 	// Metal Slug Advance
 	{ "BSME", SAVEDATA_EEPROM, HW_NONE, 0x8000290, false },
-
-	// Pokemon Pinball: Ruby & Sapphire
-	{ "BPPJ", SAVEDATA_SRAM, HW_GB_PLAYER_DETECTION, IDLE_LOOP_NONE, false },
-	{ "BPPE", SAVEDATA_SRAM, HW_GB_PLAYER_DETECTION, IDLE_LOOP_NONE, false },
-	{ "BPPP", SAVEDATA_SRAM, HW_GB_PLAYER_DETECTION, IDLE_LOOP_NONE, false },
-	{ "BPPU", SAVEDATA_SRAM, HW_GB_PLAYER_DETECTION, IDLE_LOOP_NONE, false },
 
 	// Pokemon Ruby
 	{ "AXVJ", SAVEDATA_FLASH1M, HW_RTC, IDLE_LOOP_NONE, false },
@@ -190,6 +189,16 @@ static const struct GBACartridgeOverride _overrides[] = {
 	// Aging cartridge
 	{ "TCHK", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
 
+	// Famicom Mini series 3 (FDS), some aren't mirrored (22 - 28)
+	// See https://forum.no-intro.org/viewtopic.php?f=2&t=4221 for discussion
+	{ "FNMJ", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
+	{ "FMRJ", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
+	{ "FPTJ", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
+	{ "FLBJ", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
+	{ "FFMJ", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
+	{ "FTKJ", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
+	{ "FTUJ", SAVEDATA_EEPROM, HW_NONE, IDLE_LOOP_NONE, false },
+
 	{ { 0, 0, 0, 0 }, 0, 0, IDLE_LOOP_NONE, false }
 };
 
@@ -198,22 +207,22 @@ bool GBAOverrideFind(const struct Configuration* config, struct GBACartridgeOver
 	override->hardware = HW_NONE;
 	override->idleLoop = IDLE_LOOP_NONE;
 	override->mirroring = false;
+	override->vbaBugCompat = false;
 	bool found = false;
 
-	if (override->id[0] == 'F') {
+	int i;
+	for (i = 0; _overrides[i].id[0]; ++i) {
+		if (memcmp(override->id, _overrides[i].id, sizeof(override->id)) == 0) {
+			*override = _overrides[i];
+			found = true;
+			break;
+		}
+	}
+	if (!found && override->id[0] == 'F') {
 		// Classic NES Series
 		override->savetype = SAVEDATA_EEPROM;
 		override->mirroring = true;
 		found = true;
-	} else {
-		int i;
-		for (i = 0; _overrides[i].id[0]; ++i) {
-			if (memcmp(override->id, _overrides[i].id, sizeof(override->id)) == 0) {
-				*override = _overrides[i];
-				found = true;
-				break;
-			}
-		}
 	}
 
 	if (config) {
@@ -312,6 +321,8 @@ void GBAOverrideApply(struct GBA* gba, const struct GBACartridgeOverride* overri
 		GBASavedataForceType(&gba->memory.savedata, override->savetype);
 	}
 
+	gba->vbaBugCompat = override->vbaBugCompat;
+
 	if (override->hardware != HW_NO_OVERRIDE) {
 		GBAHardwareClear(&gba->memory.hw);
 
@@ -333,6 +344,10 @@ void GBAOverrideApply(struct GBA* gba, const struct GBACartridgeOverride* overri
 
 		if (override->hardware & HW_TILT) {
 			GBAHardwareInitTilt(&gba->memory.hw);
+		}
+
+		if (override->hardware & HW_EREADER) {
+			GBAHardwareInitEReader(&gba->memory.hw);
 		}
 
 		if (override->hardware & HW_GB_PLAYER_DETECTION) {
@@ -360,10 +375,48 @@ void GBAOverrideApplyDefaults(struct GBA* gba, const struct Configuration* overr
 	if (cart) {
 		memcpy(override.id, &cart->id, sizeof(override.id));
 
-		if (!strncmp("pokemon red version", &((const char*) gba->memory.rom)[0x108], 20) && gba->romCrc32 != 0xDD88761C) {
-			// Enable FLASH1M and RTC on Pokémon FireRed ROM hacks
+		static const uint32_t pokemonTable[] = {
+			// Emerald
+			0x4881F3F8, // BPEJ
+			0x8C4D3108, // BPES
+			0x1F1C08FB, // BPEE
+			0x34C9DF89, // BPED
+			0xA3FDCCB1, // BPEF
+			0xA0AEC80A, // BPEI
+
+			// FireRed
+			0x1A81EEDF, // BPRD
+			0x3B2056E9, // BPRJ
+			0x5DC668F6, // BPRF
+			0x73A72167, // BPRI
+			0x84EE4776, // BPRE rev 1
+			0x9F08064E, // BPRS
+			0xBB640DF7, // BPRJ rev 1
+			0xDD88761C, // BPRE
+
+			// Ruby
+			0x61641576, // AXVE rev 1
+			0xAEAC73E6, // AXVE rev 2
+			0xF0815EE7, // AXVE
+		};
+
+		bool isPokemon = false;
+		isPokemon = isPokemon || !strncmp("pokemon red version", &((const char*) gba->memory.rom)[0x108], 20);
+		isPokemon = isPokemon || !strncmp("pokemon emerald version", &((const char*) gba->memory.rom)[0x108], 24);
+		isPokemon = isPokemon || !strncmp("AXVE", &((const char*) gba->memory.rom)[0xAC], 4);
+		bool isKnownPokemon = false;
+		if (isPokemon) {
+			size_t i;
+			for (i = 0; !isKnownPokemon && i < sizeof(pokemonTable) / sizeof(*pokemonTable); ++i) {
+				isKnownPokemon = gba->romCrc32 == pokemonTable[i];
+			}
+		}
+
+		if (isPokemon && !isKnownPokemon) {
+			// Enable FLASH1M and RTC on Pokémon ROM hacks
 			override.savetype = SAVEDATA_FLASH1M;
 			override.hardware = HW_RTC;
+			override.vbaBugCompat = true;
 			GBAOverrideApply(gba, &override);
 		} else if (GBAOverrideFind(overrides, &override)) {
 			GBAOverrideApply(gba, &override);

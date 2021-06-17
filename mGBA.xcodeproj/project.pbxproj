@@ -35,6 +35,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		8427BC9B267BF40B00203024 /* ereader.c in Sources */ = {isa = PBXBuildFile; fileRef = 8427BC9A267BF40B00203024 /* ereader.c */; };
 		8701D2AA1D19D36700E8A7D8 /* mGBAGameCore.m in Sources */ = {isa = PBXBuildFile; fileRef = 8701D2A91D19D36600E8A7D8 /* mGBAGameCore.m */; };
 		8701D6EE1D19D78800E8A7D8 /* arm.c in Sources */ = {isa = PBXBuildFile; fileRef = 8701D2AD1D19D4A900E8A7D8 /* arm.c */; };
 		8701D6EF1D19D7B300E8A7D8 /* decoder-arm.c in Sources */ = {isa = PBXBuildFile; fileRef = 8701D2AF1D19D4A900E8A7D8 /* decoder-arm.c */; };
@@ -151,6 +152,7 @@
 		089C167EFE841241C02AAC07 /* en */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		089C167FFE841241C02AAC07 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		1058C7ADFEA557BF11CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		8427BC9A267BF40B00203024 /* ereader.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = ereader.c; sourceTree = "<group>"; };
 		8701D2A71D19D30E00E8A7D8 /* OEGBASystemResponderClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OEGBASystemResponderClient.h; path = "../OpenEmu/SystemPlugins/GameBoy Advance/OEGBASystemResponderClient.h"; sourceTree = "<group>"; };
 		8701D2A81D19D36600E8A7D8 /* mGBAGameCore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mGBAGameCore.h; path = src/platform/openemu/mGBAGameCore.h; sourceTree = "<group>"; };
 		8701D2A91D19D36600E8A7D8 /* mGBAGameCore.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = mGBAGameCore.m; path = src/platform/openemu/mGBAGameCore.m; sourceTree = "<group>"; };
@@ -386,6 +388,7 @@
 		8701D2C81D19D4A900E8A7D8 /* gba */ = {
 			isa = PBXGroup;
 			children = (
+				8427BC9A267BF40B00203024 /* ereader.c */,
 				8701D2C91D19D4A900E8A7D8 /* audio.c */,
 				8701D2CB1D19D4A900E8A7D8 /* bios.c */,
 				8701D2CD1D19D4A900E8A7D8 /* cheats */,
@@ -788,6 +791,7 @@
 				87D380B61D92500200FC657D /* vfame.c in Sources */,
 				872FA53C1F231C6200BA95D9 /* mem-search.c in Sources */,
 				8701D70E1D19E4DE00E8A7D8 /* video.c in Sources */,
+				8427BC9B267BF40B00203024 /* ereader.c in Sources */,
 				8701D71A1D19EF8D00E8A7D8 /* memory.c in Sources */,
 				8701D70F1D19E57C00E8A7D8 /* blip_buf.c in Sources */,
 				872FA5461F231D5100BA95D9 /* text-codec.c in Sources */,
@@ -852,6 +856,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "";
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0.9.1;
 				EXPORTED_SYMBOLS_FILE = "";
 				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = (
@@ -888,6 +893,7 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "";
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0.9.1;
 				EXPORTED_SYMBOLS_FILE = "";
 				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = (

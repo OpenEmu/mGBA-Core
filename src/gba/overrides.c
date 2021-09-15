@@ -375,8 +375,45 @@ void GBAOverrideApplyDefaults(struct GBA* gba, const struct Configuration* overr
 	if (cart) {
 		memcpy(override.id, &cart->id, sizeof(override.id));
 
-		if (!strncmp("pokemon red version", &((const char*) gba->memory.rom)[0x108], 20) && gba->romCrc32 != 0xDD88761C) {
-			// Enable FLASH1M and RTC on Pokémon FireRed ROM hacks
+		static const uint32_t pokemonTable[] = {
+			// Emerald
+			0x4881F3F8, // BPEJ
+			0x8C4D3108, // BPES
+			0x1F1C08FB, // BPEE
+			0x34C9DF89, // BPED
+			0xA3FDCCB1, // BPEF
+			0xA0AEC80A, // BPEI
+
+			// FireRed
+			0x1A81EEDF, // BPRD
+			0x3B2056E9, // BPRJ
+			0x5DC668F6, // BPRF
+			0x73A72167, // BPRI
+			0x84EE4776, // BPRE rev 1
+			0x9F08064E, // BPRS
+			0xBB640DF7, // BPRJ rev 1
+			0xDD88761C, // BPRE
+
+			// Ruby
+			0x61641576, // AXVE rev 1
+			0xAEAC73E6, // AXVE rev 2
+			0xF0815EE7, // AXVE
+		};
+
+		bool isPokemon = false;
+		isPokemon = isPokemon || !strncmp("pokemon red version", &((const char*) gba->memory.rom)[0x108], 20);
+		isPokemon = isPokemon || !strncmp("pokemon emerald version", &((const char*) gba->memory.rom)[0x108], 24);
+		isPokemon = isPokemon || !strncmp("AXVE", &((const char*) gba->memory.rom)[0xAC], 4);
+		bool isKnownPokemon = false;
+		if (isPokemon) {
+			size_t i;
+			for (i = 0; !isKnownPokemon && i < sizeof(pokemonTable) / sizeof(*pokemonTable); ++i) {
+				isKnownPokemon = gba->romCrc32 == pokemonTable[i];
+			}
+		}
+
+		if (isPokemon && !isKnownPokemon) {
+			// Enable FLASH1M and RTC on Pokémon ROM hacks
 			override.savetype = SAVEDATA_FLASH1M;
 			override.hardware = HW_RTC;
 			override.vbaBugCompat = true;

@@ -345,7 +345,7 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 	cpu->memory.activeSeqCycles16 = memory->waitstatesSeq16[memory->activeRegion];
 	cpu->memory.activeNonseqCycles32 = memory->waitstatesNonseq32[memory->activeRegion];
 	cpu->memory.activeNonseqCycles16 = memory->waitstatesNonseq16[memory->activeRegion];
-	cpu->memory.activeMask &= -(cpu->executionMode == MODE_THUMB ? WORD_SIZE_THUMB : WORD_SIZE_ARM);
+	cpu->memory.activeMask &= -(cpu->cpsr.t ? WORD_SIZE_THUMB : WORD_SIZE_ARM);
 }
 
 #define LOAD_BAD \
@@ -912,7 +912,11 @@ void GBAStore16(struct ARMCore* cpu, uint32_t address, int16_t value, int* cycle
 		}
 		break;
 	case REGION_CART0:
-		if (memory->hw.devices != HW_NONE && IS_GPIO_REGISTER(address & 0xFFFFFE)) {
+		if (IS_GPIO_REGISTER(address & 0xFFFFFE)) {
+			if (memory->hw.devices == HW_NONE) {
+				mLOG(GBA_HW, WARN, "Write to GPIO address %08X on cartridge without GPIO", address);
+				break;
+			}
 			uint32_t reg = address & 0xFFFFFE;
 			GBAHardwareGPIOWrite(&memory->hw, reg, value);
 			break;
@@ -926,7 +930,6 @@ void GBAStore16(struct ARMCore* cpu, uint32_t address, int16_t value, int* cycle
 		if ((address & 0x00FFFFFF) >= AGB_PRINT_BASE) {
 			uint32_t agbPrintAddr = address & 0x00FFFFFF;
 			if (agbPrintAddr == AGB_PRINT_PROTECT) {
-				bool wasProtected = memory->agbPrintProtect != 0x20;
 				memory->agbPrintProtect = value;
 
 				if (!memory->agbPrintBuffer) {

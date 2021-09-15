@@ -102,10 +102,7 @@ static struct mLogger logger = { .log = _log };
 {
     mCoreConfigDeinit(&core->config);
 	core->deinit(core);
-	//[cheatSets release];
 	free(outputBuffer);
-
-	//[super dealloc];
 }
 
 #pragma mark - Execution

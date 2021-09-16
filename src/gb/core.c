@@ -446,7 +446,8 @@ static void _GBCoreReset(struct mCore* core) {
 		bool modelOverride = GBOverrideFind(gbcore->overrides, &override) || (doColorOverride && GBOverrideColorFind(&override));
 		if (modelOverride) {
 			GBOverrideApply(gb, &override);
-		} else {
+		}
+		if (!modelOverride || override.model == GB_MODEL_AUTODETECT) {
 			const char* modelGB = mCoreConfigGetValue(&core->config, "gb.model");
 			const char* modelSGB = mCoreConfigGetValue(&core->config, "sgb.model");
 			const char* modelCGB = mCoreConfigGetValue(&core->config, "cgb.model");
@@ -770,13 +771,13 @@ void* _GBGetMemoryBlock(struct mCore* core, size_t id, size_t* sizeOut) {
 		*sizeOut = gb->memory.romSize;
 		return gb->memory.rom;
 	case GB_REGION_VRAM:
-		*sizeOut = GB_SIZE_WORKING_RAM_BANK0 * (isCgb ? 1 : 2);
+		*sizeOut = GB_SIZE_VRAM_BANK0 * (isCgb ? 1 : 2);
 		return gb->video.vram;
 	case GB_REGION_EXTERNAL_RAM:
 		*sizeOut = gb->sramSize;
 		return gb->memory.sram;
 	case GB_REGION_WORKING_RAM_BANK0:
-		*sizeOut = GB_SIZE_VRAM * (isCgb ? 8 : 2);
+		*sizeOut = GB_SIZE_WORKING_RAM_BANK0 * (isCgb ? 8 : 2);
 		return gb->memory.wram;
 	case GB_BASE_OAM:
 		*sizeOut = GB_SIZE_OAM;

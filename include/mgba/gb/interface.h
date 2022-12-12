@@ -17,8 +17,9 @@ enum GBModel {
 	GB_MODEL_DMG  = 0x00,
 	GB_MODEL_SGB  = 0x20,
 	GB_MODEL_MGB  = 0x40,
-	GB_MODEL_SGB2 = 0x60,
+	GB_MODEL_SGB2 = GB_MODEL_MGB | GB_MODEL_SGB,
 	GB_MODEL_CGB  = 0x80,
+	GB_MODEL_SCGB = GB_MODEL_CGB | GB_MODEL_SGB,
 	GB_MODEL_AGB  = 0xC0
 };
 
@@ -40,8 +41,11 @@ enum GBMemoryBankControllerType {
 	GB_MBC5_RUMBLE = 0x105,
 	GB_UNL_WISDOM_TREE = 0x200,
 	GB_UNL_PKJD = 0x203,
+	GB_UNL_NT_NEW = 0x212,
 	GB_UNL_BBD = 0x220, // Also used as a mask for MBCs that need special read behavior
 	GB_UNL_HITEK = 0x221,
+	GB_UNL_SACHEN_MMC1 = 0x230,
+	GB_UNL_SACHEN_MMC2 = 0x231,
 };
 
 enum GBVideoLayer {

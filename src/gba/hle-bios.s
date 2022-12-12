@@ -16,51 +16,49 @@ nop
 b irqBase
 b fiqBase
 
-resetBase:
-mov r0, #0x8000000
-ldrb r1, [r0, #3]
-cmp r1, #0xEA
-ldrne r0, =0x20000C0
-bx r0
-.word 0
-.word 0xE129F000
-
 .word 0 @ Padding for back-compat
+.word 0
+.word 0
+.word 0
+.word 0
+.word 0
+.word 0
+.word 0
 
 swiBase:
 cmp    sp, #0
 moveq  sp, #0x04000000
 subeq  sp, #0x20
-stmfd  sp!, {r11-r12, lr}
-ldrb   r11, [lr, #-2]
-mov    r12, #swiTable
-ldr    r11, [r12, r11, lsl #2]
-mov    r12, #StallCall
-cmp    r12, r11
-mrs    r12, spsr
-stmfd  sp!, {r12}
-and    r12, #0x80
-orr    r12, #0x1F
-msr    cpsr_c, r12
-swieq  0xF00000  @ Special mGBA-internal call to load the stall count into r12
+stmfd  sp!, {r11, r12, lr}
+ldrb   r12, [lr, #-2]
+mov    r11, #swiTable
+ldr    r12, [r11, r12, lsl #2]
+mov    r11, #StallCall
+cmp    r11, r12
+mrs    r11, spsr
+stmfd  sp!, {r11}
+and    r11, #0x80
+orr    r11, #0x1F
+msr    cpsr_c, r11
+swieq  0xF00000  @ Special mGBA-internal call to load the stall count into r11
 stmfd  sp!, {r2, lr}
-cmp    r11, #0
+cmp    r12, #0
 nop
 nop
 nop
 nop
 nop
 nop
-mov    lr, pc
-bxne   r11
+movne  lr, pc
+bxne   r12
 nop
 nop
 nop
 ldmfd  sp!, {r2, lr}
 msr    cpsr, #0x93
-ldmfd  sp!, {r12}
-msr    spsr, r12
-ldmfd  sp!, {r11-r12, lr}
+ldmfd  sp!, {r11}
+msr    spsr, r11
+ldmfd  sp!, {r11, r12, lr}
 movs   pc, lr
 .word 0
 .word 0xE3A02004
@@ -113,6 +111,7 @@ swiTable:
 .word SoundDriverGetJumpList  @ 0x2A
 
 .ltorg
+.word 0 @ Padding for back-compat
 
 irqBase:
 stmfd  sp!, {r0-r3, r12, lr}
@@ -137,8 +136,6 @@ GetBiosChecksum:
 BgAffineSet:
 ObjAffineSet:
 BitUnPack:
-Lz77UnCompWram:
-Lz77UnCompVram:
 HuffmanUnComp:
 RlUnCompWram:
 RlUnCompVram:
@@ -308,8 +305,26 @@ DivArm:
 Sqrt:
 ArcTan:
 ArcTan2:
+Lz77UnCompWram:
+Lz77UnCompVram:
 
 StallCall:
-subs r12, #4
+subs r11, #4
 bhi StallCall
 bx lr
+
+resetBase:
+mov lr, #0x8000003
+ldrb r1, [lr], #-3
+cmp r1, #0
+movne r1, #0
+bxne lr
+ldr lr, =0x20000C0
+ldr r1, [lr]
+cmp r1, #0
+mov r1, #0
+bxne lr
+sub lr, #0xC0
+bx lr
+.word 0
+.word 0xE129F000

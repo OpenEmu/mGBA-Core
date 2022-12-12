@@ -7,6 +7,7 @@
 
 #include <mgba/internal/gba/gba.h>
 #include <mgba/internal/gba/io.h>
+#include <mgba/internal/gba/sio/gbp.h>
 
 mLOG_DEFINE_CATEGORY(GBA_SIO, "GBA Serial I/O", "gba.sio");
 
@@ -76,6 +77,10 @@ void GBASIOInit(struct GBASIO* sio) {
 	sio->drivers.multiplayer = 0;
 	sio->drivers.joybus = 0;
 	sio->activeDriver = 0;
+
+	sio->gbp.p = sio->p;
+	GBASIOPlayerInit(&sio->gbp);
+
 	GBASIOReset(sio);
 }
 
@@ -103,6 +108,8 @@ void GBASIOReset(struct GBASIO* sio) {
 	sio->mode = -1;
 	sio->activeDriver = NULL;
 	_switchMode(sio);
+
+	GBASIOPlayerReset(&sio->gbp);
 }
 
 void GBASIOSetDriverSet(struct GBASIO* sio, struct GBASIODriverSet* drivers) {
@@ -181,7 +188,7 @@ void GBASIOWriteSIOCNT(struct GBASIO* sio, uint16_t value) {
 			if ((value & 0x0081) == 0x0081) {
 				if (value & 0x4000) {
 					// TODO: Test this on hardware to see if this is correct
-					GBARaiseIRQ(sio->p, IRQ_SIO, 0);
+					GBARaiseIRQ(sio->p, GBA_IRQ_SIO, 0);
 				}
 				value &= ~0x0080;
 			}

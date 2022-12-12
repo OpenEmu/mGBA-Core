@@ -6,6 +6,7 @@
 #include <mgba/internal/gba/savedata.h>
 
 #include <mgba/internal/arm/macros.h>
+#include <mgba/internal/defines.h>
 #include <mgba/internal/gba/gba.h>
 #include <mgba/internal/gba/serialize.h>
 
@@ -24,7 +25,6 @@
 #define FLASH_PROGRAM_CYCLES 650
 // This needs real testing, and is only an estimation currently
 #define EEPROM_SETTLE_CYCLES 115000
-#define CLEANUP_THRESHOLD 15
 
 mLOG_DEFINE_CATEGORY(GBA_SAVE, "GBA Savedata", "gba.savedata");
 
@@ -45,6 +45,9 @@ void GBASavedataInit(struct GBASavedata* savedata, struct VFile* vf) {
 	savedata->command = EEPROM_COMMAND_NULL;
 	savedata->flashState = FLASH_STATE_RAW;
 	savedata->vf = vf;
+	if (savedata->realVf && savedata->realVf != vf) {
+		savedata->realVf->close(savedata->realVf);
+	}
 	savedata->realVf = vf;
 	savedata->mapMode = MAP_WRITE;
 	savedata->maskWriteback = false;
@@ -67,6 +70,9 @@ void GBASavedataDeinit(struct GBASavedata* savedata) {
 		switch (savedata->type) {
 		case SAVEDATA_SRAM:
 			mappedMemoryFree(savedata->data, SIZE_CART_SRAM);
+			break;
+		case SAVEDATA_SRAM512:
+			mappedMemoryFree(savedata->data, SIZE_CART_SRAM512);
 			break;
 		case SAVEDATA_FLASH512:
 			mappedMemoryFree(savedata->data, SIZE_CART_FLASH512);
@@ -124,6 +130,8 @@ bool GBASavedataClone(struct GBASavedata* savedata, struct VFile* out) {
 		switch (savedata->type) {
 		case SAVEDATA_SRAM:
 			return out->write(out, savedata->data, SIZE_CART_SRAM) == SIZE_CART_SRAM;
+		case SAVEDATA_SRAM512:
+			return out->write(out, savedata->data, SIZE_CART_SRAM512) == SIZE_CART_SRAM512;
 		case SAVEDATA_FLASH512:
 			return out->write(out, savedata->data, SIZE_CART_FLASH512) == SIZE_CART_FLASH512;
 		case SAVEDATA_FLASH1M:
@@ -153,6 +161,8 @@ size_t GBASavedataSize(const struct GBASavedata* savedata) {
 	switch (savedata->type) {
 	case SAVEDATA_SRAM:
 		return SIZE_CART_SRAM;
+	case SAVEDATA_SRAM512:
+		return SIZE_CART_SRAM512;
 	case SAVEDATA_FLASH512:
 		return SIZE_CART_FLASH512;
 	case SAVEDATA_FLASH1M:
@@ -232,6 +242,9 @@ void GBASavedataForceType(struct GBASavedata* savedata, enum SavedataType type) 
 		break;
 	case SAVEDATA_SRAM:
 		GBASavedataInitSRAM(savedata);
+		break;
+	case SAVEDATA_SRAM512:
+		GBASavedataInitSRAM512(savedata);
 		break;
 	case SAVEDATA_FORCE_NONE:
 		savedata->type = SAVEDATA_FORCE_NONE;
@@ -322,6 +335,30 @@ void GBASavedataInitSRAM(struct GBASavedata* savedata) {
 	}
 }
 
+void GBASavedataInitSRAM512(struct GBASavedata* savedata) {
+	if (savedata->type == SAVEDATA_AUTODETECT) {
+		savedata->type = SAVEDATA_SRAM512;
+	} else {
+		mLOG(GBA_SAVE, WARN, "Can't re-initialize savedata");
+		return;
+	}
+	off_t end;
+	if (!savedata->vf) {
+		end = 0;
+		savedata->data = anonymousMemoryMap(SIZE_CART_SRAM512);
+	} else {
+		end = savedata->vf->size(savedata->vf);
+		if (end < SIZE_CART_SRAM512) {
+			savedata->vf->truncate(savedata->vf, SIZE_CART_SRAM512);
+		}
+		savedata->data = savedata->vf->map(savedata->vf, SIZE_CART_SRAM512, savedata->mapMode);
+	}
+
+	if (end < SIZE_CART_SRAM512) {
+		memset(&savedata->data[end], 0xFF, SIZE_CART_SRAM512 - end);
+	}
+}
+
 uint8_t GBASavedataReadFlash(struct GBASavedata* savedata, uint16_t address) {
 	if (savedata->command == FLASH_COMMAND_ID) {
 		if (savedata->type == SAVEDATA_FLASH512) {
@@ -345,7 +382,7 @@ void GBASavedataWriteFlash(struct GBASavedata* savedata, uint16_t address, uint8
 	case FLASH_STATE_RAW:
 		switch (savedata->command) {
 		case FLASH_COMMAND_PROGRAM:
-			savedata->dirty |= SAVEDATA_DIRT_NEW;
+			savedata->dirty |= mSAVEDATA_DIRT_NEW;
 			savedata->currentBank[address] = value;
 			savedata->command = FLASH_COMMAND_NONE;
 			mTimingDeschedule(savedata->timing, &savedata->dust);
@@ -477,7 +514,7 @@ void GBASavedataWriteEEPROM(struct GBASavedata* savedata, uint16_t value, uint32
 			uint8_t current = savedata->data[savedata->writeAddress >> 3];
 			current &= ~(1 << (0x7 - (savedata->writeAddress & 0x7)));
 			current |= (value & 0x1) << (0x7 - (savedata->writeAddress & 0x7));
-			savedata->dirty |= SAVEDATA_DIRT_NEW;
+			savedata->dirty |= mSAVEDATA_DIRT_NEW;
 			savedata->data[savedata->writeAddress >> 3] = current;
 			mTimingDeschedule(savedata->timing, &savedata->dust);
 			mTimingSchedule(savedata->timing, &savedata->dust, EEPROM_SETTLE_CYCLES);
@@ -531,24 +568,85 @@ void GBASavedataClean(struct GBASavedata* savedata, uint32_t frameCount) {
 	if (!savedata->vf) {
 		return;
 	}
-	if (savedata->dirty & SAVEDATA_DIRT_NEW) {
-		savedata->dirtAge = frameCount;
-		savedata->dirty &= ~SAVEDATA_DIRT_NEW;
-		savedata->dirty |= SAVEDATA_DIRT_SEEN;
-	} else if ((savedata->dirty & SAVEDATA_DIRT_SEEN) && frameCount - savedata->dirtAge > CLEANUP_THRESHOLD) {
+	if (mSavedataClean(&savedata->dirty, &savedata->dirtAge, frameCount)) {
 		if (savedata->maskWriteback) {
 			GBASavedataUnmask(savedata);
 		}
-		savedata->dirty = 0;
 		if (savedata->mapMode & MAP_WRITE) {
 			size_t size = GBASavedataSize(savedata);
 			if (savedata->data && savedata->vf->sync(savedata->vf, savedata->data, size)) {
+				GBASavedataRTCWrite(savedata);
 				mLOG(GBA_SAVE, INFO, "Savedata synced");
 			} else {
 				mLOG(GBA_SAVE, INFO, "Savedata failed to sync!");
 			}
 		}
 	}
+}
+
+void GBASavedataRTCWrite(struct GBASavedata* savedata) {
+	if (!(savedata->gpio->devices & HW_RTC) || !savedata->vf || savedata->mapMode == MAP_READ) {
+		return;
+	}
+
+	struct GBASavedataRTCBuffer buffer;
+
+	memcpy(&buffer.time, savedata->gpio->rtc.time, 7);
+	buffer.control = savedata->gpio->rtc.control;
+	STORE_64LE(savedata->gpio->rtc.lastLatch, 0, &buffer.lastLatch);
+
+	size_t size = GBASavedataSize(savedata);
+	savedata->vf->seek(savedata->vf, size & ~0xFF, SEEK_SET);
+
+	if ((savedata->vf->size(savedata->vf) & 0xFF) != sizeof(buffer)) {
+		// Writing past the end of the file can invalidate the file mapping
+		savedata->vf->unmap(savedata->vf, savedata->data, size);
+		savedata->data = NULL;
+	}
+	savedata->vf->write(savedata->vf, &buffer, sizeof(buffer));
+	if (!savedata->data) {
+		savedata->data = savedata->vf->map(savedata->vf, size, MAP_WRITE);
+	}
+}
+
+static uint8_t _unBCD(uint8_t byte) {
+	return (byte >> 4) * 10 + (byte & 0xF);
+}
+
+void GBASavedataRTCRead(struct GBASavedata* savedata) {
+	if (!savedata->vf) {
+		return;
+	}
+
+	struct GBASavedataRTCBuffer buffer;
+
+	size_t size = GBASavedataSize(savedata) & ~0xFF;
+	savedata->vf->seek(savedata->vf, size, SEEK_SET);
+	size = savedata->vf->read(savedata->vf, &buffer, sizeof(buffer));
+	if (size < sizeof(buffer)) {
+		return;
+	}
+
+	memcpy(savedata->gpio->rtc.time, &buffer.time, 7);
+
+	// Older FlashGBX sets this to 0x01 instead of the control flag.
+	// Since that bit is invalid on hardware, we can check for != 0x01
+	// to see if it's a valid value instead of just a filler value.
+	if (buffer.control != 1) {
+		savedata->gpio->rtc.control = buffer.control;
+	}
+	LOAD_64LE(savedata->gpio->rtc.lastLatch, 0, &buffer.lastLatch);
+
+	struct tm date;
+	date.tm_year = _unBCD(savedata->gpio->rtc.time[0]) + 100;
+	date.tm_mon = _unBCD(savedata->gpio->rtc.time[1]) - 1;
+	date.tm_mday = _unBCD(savedata->gpio->rtc.time[2]);
+	date.tm_hour = _unBCD(savedata->gpio->rtc.time[4]);
+	date.tm_min = _unBCD(savedata->gpio->rtc.time[5]);
+	date.tm_sec = _unBCD(savedata->gpio->rtc.time[6]);
+	date.tm_isdst = -1;
+
+	savedata->gpio->rtc.offset = savedata->gpio->rtc.lastLatch - mktime(&date);
 }
 
 void GBASavedataSerialize(const struct GBASavedata* savedata, struct GBASerializedState* state) {
@@ -616,7 +714,7 @@ void _flashSwitchBank(struct GBASavedata* savedata, int bank) {
 
 void _flashErase(struct GBASavedata* savedata) {
 	mLOG(GBA_SAVE, DEBUG, "Performing flash chip erase");
-	savedata->dirty |= SAVEDATA_DIRT_NEW;
+	savedata->dirty |= mSAVEDATA_DIRT_NEW;
 	size_t size = SIZE_CART_FLASH512;
 	if (savedata->type == SAVEDATA_FLASH1M) {
 		size = SIZE_CART_FLASH1M;
@@ -626,7 +724,7 @@ void _flashErase(struct GBASavedata* savedata) {
 
 void _flashEraseSector(struct GBASavedata* savedata, uint16_t sectorStart) {
 	mLOG(GBA_SAVE, DEBUG, "Performing flash sector erase at 0x%04x", sectorStart);
-	savedata->dirty |= SAVEDATA_DIRT_NEW;
+	savedata->dirty |= mSAVEDATA_DIRT_NEW;
 	size_t size = 0x1000;
 	if (savedata->type == SAVEDATA_FLASH1M) {
 		mLOG(GBA_SAVE, DEBUG, "Performing unknown sector-size erase at 0x%04x", sectorStart);

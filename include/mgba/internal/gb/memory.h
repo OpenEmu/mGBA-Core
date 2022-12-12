@@ -65,11 +65,6 @@ enum {
 	GB_SIZE_MBC6_FLASH = 0x100000,
 };
 
-enum {
-	GB_SRAM_DIRT_NEW = 1,
-	GB_SRAM_DIRT_SEEN = 2
-};
-
 struct GBMemory;
 typedef void (*GBMemoryBankControllerWrite)(struct GB*, uint16_t address, uint8_t value);
 typedef uint8_t (*GBMemoryBankControllerRead)(struct GBMemory*, uint16_t address);
@@ -99,12 +94,93 @@ enum GBTAMA5Register {
 	GBTAMA5_BANK_HI = 0x1,
 	GBTAMA5_WRITE_LO = 0x4,
 	GBTAMA5_WRITE_HI = 0x5,
-	GBTAMA5_CS = 0x6,
+	GBTAMA5_ADDR_HI = 0x6,
 	GBTAMA5_ADDR_LO = 0x7,
 	GBTAMA5_MAX = 0x8,
 	GBTAMA5_ACTIVE = 0xA,
 	GBTAMA5_READ_LO = 0xC,
 	GBTAMA5_READ_HI = 0xD,
+};
+
+enum GBTAMA6RTCRegister {
+	GBTAMA6_RTC_PA0_SECOND_1 = 0x0,
+	GBTAMA6_RTC_PA0_SECOND_10 = 0x1,
+	GBTAMA6_RTC_PA0_MINUTE_1 = 0x2,
+	GBTAMA6_RTC_PA0_MINUTE_10 = 0x3,
+	GBTAMA6_RTC_PA0_HOUR_1 = 0x4,
+	GBTAMA6_RTC_PA0_HOUR_10 = 0x5,
+	GBTAMA6_RTC_PA0_WEEK = 0x6,
+	GBTAMA6_RTC_PA0_DAY_1 = 0x7,
+	GBTAMA6_RTC_PA0_DAY_10 = 0x8,
+	GBTAMA6_RTC_PA0_MONTH_1 = 0x9,
+	GBTAMA6_RTC_PA0_MONTH_10 = 0xA,
+	GBTAMA6_RTC_PA0_YEAR_1 = 0xB,
+	GBTAMA6_RTC_PA0_YEAR_10 = 0xC,
+	GBTAMA6_RTC_PA1_MINUTE_1 = 0x2,
+	GBTAMA6_RTC_PA1_MINUTE_10 = 0x3,
+	GBTAMA6_RTC_PA1_HOUR_1 = 0x4,
+	GBTAMA6_RTC_PA1_HOUR_10 = 0x5,
+	GBTAMA6_RTC_PA1_WEEK = 0x6,
+	GBTAMA6_RTC_PA1_DAY_1 = 0x7,
+	GBTAMA6_RTC_PA1_DAY_10 = 0x8,
+	GBTAMA6_RTC_PA1_24_HOUR = 0xA,
+	GBTAMA6_RTC_PA1_LEAP_YEAR = 0xB,
+	GBTAMA6_RTC_PAGE = 0xD,
+	GBTAMA6_RTC_TEST = 0xE,
+	GBTAMA6_RTC_RESET = 0xF,
+	GBTAMA6_RTC_MAX
+};
+
+enum GBTAMA6Command {
+	GBTAMA6_DISABLE_TIMER = 0x0,
+	GBTAMA6_ENABLE_TIMER = 0x1,
+	GBTAMA6_MINUTE_WRITE = 0x4,
+	GBTAMA6_HOUR_WRITE = 0x5,
+	GBTAMA6_MINUTE_READ = 0x6,
+	GBTAMA6_HOUR_READ = 0x7,
+	GBTAMA6_DISABLE_ALARM = 0x10,
+	GBTAMA6_ENABLE_ALARM = 0x11,
+};
+
+enum GBHuC3Register {
+	GBHUC3_RTC_MINUTES_LO = 0x10,
+	GBHUC3_RTC_MINUTES_MI = 0x11,
+	GBHUC3_RTC_MINUTES_HI = 0x12,
+	GBHUC3_RTC_DAYS_LO = 0x13,
+	GBHUC3_RTC_DAYS_MI = 0x14,
+	GBHUC3_RTC_DAYS_HI = 0x15,
+	GBHUC3_RTC_ENABLE = 0x16,
+	GBHUC3_SPEAKER_TONE = 0x26,
+	GBHUC3_SPEAKER_ENABLE = 0x27,
+	GBHUC3_ALARM_MINUTES_LO = 0x58,
+	GBHUC3_ALARM_MINUTES_MI = 0x59,
+	GBHUC3_ALARM_MINUTES_HI = 0x5A,
+	GBHUC3_ALARM_DAYS_LO = 0x5B,
+	GBHUC3_ALARM_DAYS_MI = 0x5C,
+	GBHUC3_ALARM_DAYS_HI = 0x5D,
+	GBHUC3_ALARM_TONE = 0x5E,
+	GBHUC3_ALARM_ENABLE = 0x5F,
+};
+
+enum GBHuC3Mode {
+	GBHUC3_MODE_SRAM_RO = 0x0,
+	GBHUC3_MODE_SRAM_RW = 0xA,
+	GBHUC3_MODE_IN = 0xB,
+	GBHUC3_MODE_OUT = 0xC,
+	GBHUC3_MODE_COMMIT = 0xD,
+};
+
+enum GBHuC3Command {
+	GBHUC3_CMD_LATCH = 0x0,
+	GBHUC3_CMD_SET_RTC = 0x1,
+	GBHUC3_CMD_RO = 0x2,
+	GBHUC3_CMD_TONE = 0xE,
+};
+
+enum GBSachenLockMode {
+	GB_SACHEN_LOCKED_DMG = 0,
+	GB_SACHEN_LOCKED_CGB,
+	GB_SACHEN_UNLOCKED
 };
 
 struct GBMBC1State {
@@ -115,11 +191,7 @@ struct GBMBC1State {
 };
 
 struct GBMBC6State {
-	int currentBank1;
-	uint8_t* romBank1;
 	bool sramAccess;
-	int currentSramBank1;
-	uint8_t* sramBank1;
 	bool flashBank0;
 	bool flashBank1;
 };
@@ -147,16 +219,40 @@ struct GBPocketCamState {
 
 struct GBTAMA5State {
 	uint8_t reg;
+	bool disabled;
 	uint8_t registers[GBTAMA5_MAX];
+	uint8_t rtcTimerPage[GBTAMA6_RTC_MAX];
+	uint8_t rtcAlarmPage[GBTAMA6_RTC_MAX];
+	uint8_t rtcFreePage0[GBTAMA6_RTC_MAX];
+	uint8_t rtcFreePage1[GBTAMA6_RTC_MAX];
+};
+
+struct GBHuC3State {
+	uint8_t index;
+	uint8_t value;
+	uint8_t mode;
+	uint8_t registers[256];
 };
 
 struct GBPKJDState {
 	uint8_t reg[2];
 };
 
+struct GBNTNewState {
+	bool splitMode;
+};
+
 struct GBBBDState {
 	int dataSwapMode;
 	int bankSwapMode;
+};
+
+struct GBSachenState {
+	enum GBSachenLockMode locked;
+	int transition;
+	uint8_t mask;
+	uint8_t unmaskedBank;
+	uint8_t baseBank;
 };
 
 union GBMBCState {
@@ -166,8 +262,11 @@ union GBMBCState {
 	struct GBMMM01State mmm01;
 	struct GBPocketCamState pocketCam;
 	struct GBTAMA5State tama5;
+	struct GBHuC3State huc3;
+	struct GBNTNewState ntNew;
 	struct GBPKJDState pkjd;
 	struct GBBBDState bbd;
+	struct GBSachenState sachen;
 };
 
 struct mRotationSource;
@@ -181,10 +280,23 @@ struct GBMemory {
 	union GBMBCState mbcState;
 	int currentBank;
 	int currentBank0;
+	int currentBank1;
+	uint8_t* romBank1;
+	int currentSramBank1;
+	uint8_t* sramBank1;
+
+	unsigned cartBusDecay;
+	uint16_t cartBusPc;
+	uint8_t cartBus;
 
 	uint8_t* wram;
 	uint8_t* wramBank;
 	int wramCurrentBank;
+
+	bool mbcReadBank0;
+	bool mbcReadBank1;
+	bool mbcReadHigh;
+	bool mbcWriteHigh;
 
 	bool sramAccess;
 	bool directSramAccess;

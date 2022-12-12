@@ -15,6 +15,8 @@
 #define VIDEO_CHECKS true
 #endif
 
+#define ENABLED_MAX 4
+
 void GBAVideoSoftwareRendererDrawBackgroundMode0(struct GBAVideoSoftwareRenderer* renderer,
                                                  struct GBAVideoSoftwareBackground* background, int y);
 void GBAVideoSoftwareRendererDrawBackgroundMode2(struct GBAVideoSoftwareRenderer* renderer,
@@ -165,6 +167,50 @@ static inline void _compositeNoBlendNoObjwin(struct GBAVideoSoftwareRenderer* re
 			break;                                                                                \
 		}                                                                                         \
 	}
+
+#define BACKGROUND_BITMAP_INIT                                                                                        \
+	int32_t x = background->sx + (renderer->start - 1) * background->dx;                                              \
+	int32_t y = background->sy + (renderer->start - 1) * background->dy;                                              \
+	int mosaicH = 0;                                                                                                  \
+	int mosaicWait = 0;                                                                                               \
+	int32_t localX;                                                                                                   \
+	int32_t localY;                                                                                                   \
+	if (background->mosaic) {                                                                                         \
+		int mosaicV = GBAMosaicControlGetBgV(renderer->mosaic) + 1;                                                   \
+		mosaicH = GBAMosaicControlGetBgH(renderer->mosaic) + 1;                                                       \
+		mosaicWait = (mosaicH - renderer->start + GBA_VIDEO_HORIZONTAL_PIXELS * mosaicH) % mosaicH;                   \
+		int32_t startX = renderer->start - (renderer->start % mosaicH);                                               \
+		--mosaicH;                                                                                                    \
+		localX = -(inY % mosaicV) * background->dmx;                                                                  \
+		localY = -(inY % mosaicV) * background->dmy;                                                                  \
+		x += localX;                                                                                                  \
+		y += localY;                                                                                                  \
+		localX += background->sx + startX * background->dx;                                                           \
+		localY += background->sy + startX * background->dy;                                                           \
+	}                                                                                                                 \
+                                                                                                                      \
+	uint32_t flags = background->flags;                                                                               \
+	uint32_t objwinFlags = background->objwinFlags;                                                                   \
+	bool variant = background->variant;                                                                               \
+	color_t* palette = renderer->normalPalette;                                                                       \
+	if (renderer->d.highlightAmount && background->highlight) {                                                       \
+		palette = renderer->highlightPalette;                                                                         \
+	}                                                                                                                 \
+	if (variant) {                                                                                                    \
+		palette = renderer->variantPalette;                                                                           \
+		if (renderer->d.highlightAmount && background->highlight) {                                                   \
+			palette = renderer->highlightVariantPalette;                                                              \
+		}                                                                                                             \
+	}                                                                                                                 \
+	UNUSED(palette);                                                                                                  \
+	PREPARE_OBJWIN;
+
+#define TEST_LAYER_ENABLED(X) \
+	!softwareRenderer->d.disableBG[X] && \
+	(softwareRenderer->bg[X].enabled == ENABLED_MAX && \
+	(GBAWindowControlIsBg ## X ## Enable(softwareRenderer->currentWindow.packed) || \
+	(GBARegisterDISPCNTIsObjwinEnable(softwareRenderer->dispcnt) && GBAWindowControlIsBg ## X ## Enable (softwareRenderer->objwin.packed))) && \
+	softwareRenderer->bg[X].priority == priority)
 
 static inline unsigned _brighten(unsigned color, int y) {
 	unsigned c = 0;

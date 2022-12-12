@@ -164,6 +164,7 @@ enum mColorFormat {
 	mCOLOR_BGRA5  = 0x08000,
 	mCOLOR_RGB8   = 0x10000,
 	mCOLOR_BGR8   = 0x20000,
+	mCOLOR_L8     = 0x40000,
 
 	mCOLOR_ANY    = -1
 };
@@ -181,19 +182,27 @@ struct mCoreCallbacks {
 	void (*shutdown)(void* context);
 	void (*keysRead)(void* context);
 	void (*savedataUpdated)(void* context);
+	void (*alarm)(void* context);
 };
 
 DECLARE_VECTOR(mCoreCallbacksList, struct mCoreCallbacks);
 
 struct mAVStream {
 	void (*videoDimensionsChanged)(struct mAVStream*, unsigned width, unsigned height);
+	void (*audioRateChanged)(struct mAVStream*, unsigned rate);
 	void (*postVideoFrame)(struct mAVStream*, const color_t* buffer, size_t stride);
 	void (*postAudioFrame)(struct mAVStream*, int16_t left, int16_t right);
 	void (*postAudioBuffer)(struct mAVStream*, struct blip_t* left, struct blip_t* right);
 };
 
+struct mStereoSample {
+	int16_t left;
+	int16_t right;
+};
+
 struct mKeyCallback {
 	uint16_t (*readKeys)(struct mKeyCallback*);
+	bool requireOpposingDirections;
 };
 
 enum mPeripheral {
@@ -231,6 +240,7 @@ enum mRTCGenericType {
 	RTC_NO_OVERRIDE,
 	RTC_FIXED,
 	RTC_FAKE_EPOCH,
+	RTC_WALLCLOCK_OFFSET,
 	RTC_CUSTOM_START = 0x1000
 };
 
@@ -281,6 +291,21 @@ struct mCoreMemoryBlock {
 	uint32_t flags;
 	uint16_t maxSegment;
 	uint32_t segmentStart;
+};
+
+enum mCoreRegisterType {
+	mCORE_REGISTER_GPR = 0,
+	mCORE_REGISTER_FPR,
+	mCORE_REGISTER_FLAGS,
+	mCORE_REGISTER_SIMD,
+};
+
+struct mCoreRegisterInfo {
+	const char* name;
+	const char** aliases;
+	unsigned width;
+	uint32_t mask;
+	enum mCoreRegisterType type;
 };
 
 CXX_GUARD_END

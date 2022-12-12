@@ -48,6 +48,8 @@
 #endif
 
 const char* const binaryName = "mGBA";
+const char* const projectName = "mGBA";
+const char* projectVersion;
 
 @interface mGBAGameCore () <OEGBASystemResponderClient>
 {
@@ -109,6 +111,8 @@ static struct mLogger logger = { .log = _log };
 
 - (BOOL)loadFileAtPath:(NSString *)path error:(NSError **)error
 {
+    projectVersion = [self.owner.bundle.infoDictionary[@"CFBundleVersion"] UTF8String];
+
 	NSString *batterySavesDirectory = [self batterySavesDirectoryPath];
 	[[NSFileManager defaultManager] createDirectoryAtURL:[NSURL fileURLWithPath:batterySavesDirectory]
 	                                withIntermediateDirectories:YES

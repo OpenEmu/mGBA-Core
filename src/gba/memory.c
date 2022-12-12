@@ -7,6 +7,7 @@
 
 #include <mgba/internal/arm/decoder.h>
 #include <mgba/internal/arm/macros.h>
+#include <mgba/internal/defines.h>
 #include <mgba/internal/gba/gba.h>
 #include <mgba/internal/gba/dma.h>
 #include <mgba/internal/gba/io.h>
@@ -82,7 +83,6 @@ void GBAMemoryInit(struct GBA* gba) {
 	cpu->memory.activeNonseqCycles32 = 0;
 	cpu->memory.activeNonseqCycles16 = 0;
 	gba->memory.biosPrefetch = 0;
-	gba->memory.mirroring = false;
 
 	gba->memory.agbPrintProtect = 0;
 	memset(&gba->memory.agbPrintCtx, 0, sizeof(gba->memory.agbPrintCtx));
@@ -94,6 +94,10 @@ void GBAMemoryInit(struct GBA* gba) {
 
 	GBADMAInit(gba);
 	GBAVFameInit(&gba->memory.vfame);
+
+	gba->memory.ereader.p = gba;
+	gba->memory.ereader.dots = NULL;
+	memset(gba->memory.ereader.cards, 0, sizeof(gba->memory.ereader.cards));
 }
 
 void GBAMemoryDeinit(struct GBA* gba) {
@@ -107,6 +111,8 @@ void GBAMemoryDeinit(struct GBA* gba) {
 	if (gba->memory.agbPrintBufferBackup) {
 		mappedMemoryFree(gba->memory.agbPrintBufferBackup, SIZE_AGB_PRINT);
 	}
+
+	GBACartEReaderDeinit(&gba->memory.ereader);
 }
 
 void GBAMemoryReset(struct GBA* gba) {
@@ -120,6 +126,7 @@ void GBAMemoryReset(struct GBA* gba) {
 
 	memset(gba->memory.io, 0, sizeof(gba->memory.io));
 	GBAAdjustWaitstates(gba, 0);
+	GBAAdjustEWRAMWaitstates(gba, 0x0D00);
 
 	gba->memory.activeRegion = -1;
 	gba->memory.agbPrintProtect = 0;
@@ -269,9 +276,6 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 		if (newRegion < REGION_CART0 || (address & (SIZE_CART0 - 1)) < memory->romSize) {
 			return;
 		}
-		if (memory->mirroring && (address & memory->romMask) < memory->romSize) {
-			return;
-		}
 	}
 
 	if (memory->activeRegion == REGION_BIOS) {
@@ -403,8 +407,6 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 	wait += waitstatesRegion[address >> BASE_OFFSET]; \
 	if ((address & (SIZE_CART0 - 1)) < memory->romSize) { \
 		LOAD_32(value, address & (SIZE_CART0 - 4), memory->rom); \
-	} else if (memory->mirroring && (address & memory->romMask) < memory->romSize) { \
-		LOAD_32(value, address & memory->romMask & -4, memory->rom); \
 	} else if (memory->vfame.cartType) { \
 		value = GBAVFameGetPatternValue(address, 32); \
 	} else { \
@@ -570,8 +572,6 @@ uint32_t GBALoad16(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 		wait = memory->waitstatesNonseq16[address >> BASE_OFFSET];
 		if ((address & (SIZE_CART0 - 1)) < memory->romSize) {
 			LOAD_16(value, address & (SIZE_CART0 - 2), memory->rom);
-		} else if (memory->mirroring && (address & memory->romMask) < memory->romSize) {
-			LOAD_16(value, address & memory->romMask, memory->rom);
 		} else if (memory->vfame.cartType) {
 			value = GBAVFameGetPatternValue(address, 16);
 		} else if ((address & (SIZE_CART0 - 1)) >= AGB_PRINT_BASE) {
@@ -594,11 +594,9 @@ uint32_t GBALoad16(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 		if (memory->savedata.type == SAVEDATA_EEPROM || memory->savedata.type == SAVEDATA_EEPROM512) {
 			value = GBASavedataReadEEPROM(&memory->savedata);
 		} else if ((address & 0x0DFC0000) >= 0x0DF80000 && memory->hw.devices & HW_EREADER) {
-			value = GBAHardwareEReaderRead(&memory->hw, address);
+			value = GBACartEReaderRead(&memory->ereader, address);
 		} else if ((address & (SIZE_CART0 - 1)) < memory->romSize) {
 			LOAD_16(value, address & (SIZE_CART0 - 2), memory->rom);
-		} else if (memory->mirroring && (address & memory->romMask) < memory->romSize) {
-			LOAD_16(value, address & memory->romMask, memory->rom);
 		} else if (memory->vfame.cartType) {
 			value = GBAVFameGetPatternValue(address, 16);
 		} else {
@@ -690,8 +688,6 @@ uint32_t GBALoad8(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 		wait = memory->waitstatesNonseq16[address >> BASE_OFFSET];
 		if ((address & (SIZE_CART0 - 1)) < memory->romSize) {
 			value = ((uint8_t*) memory->rom)[address & (SIZE_CART0 - 1)];
-		} else if (memory->mirroring && (address & memory->romMask) < memory->romSize) {
-			value = ((uint8_t*) memory->rom)[address & memory->romMask];
 		} else if (memory->vfame.cartType) {
 			value = GBAVFameGetPatternValue(address, 8);
 		} else {
@@ -710,13 +706,15 @@ uint32_t GBALoad8(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 			break;
 		}
 		if (memory->hw.devices & HW_EREADER && (address & 0xE00FF80) >= 0xE00FF80) {
-			value = GBAHardwareEReaderReadFlash(&memory->hw, address);
+			value = GBACartEReaderReadFlash(&memory->ereader, address);
 		} else if (memory->savedata.type == SAVEDATA_SRAM) {
 			value = memory->savedata.data[address & (SIZE_CART_SRAM - 1)];
 		} else if (memory->savedata.type == SAVEDATA_FLASH512 || memory->savedata.type == SAVEDATA_FLASH1M) {
 			value = GBASavedataReadFlash(&memory->savedata, address);
 		} else if (memory->hw.devices & HW_TILT) {
 			value = GBAHardwareTiltRead(&memory->hw, address & OFFSET_MASK);
+		} else if (memory->savedata.type == SAVEDATA_SRAM512) {
+			value = memory->savedata.data[address & (SIZE_CART_SRAM512 - 1)];
 		} else {
 			mLOG(GBA_MEM, GAME_ERROR, "Reading from non-existent SRAM: 0x%08X", address);
 			value = 0xFF;
@@ -971,7 +969,7 @@ void GBAStore16(struct ARMCore* cpu, uint32_t address, int16_t value, int* cycle
 		break;
 	case REGION_CART2_EX:
 		if ((address & 0x0DFC0000) >= 0x0DF80000 && memory->hw.devices & HW_EREADER) {
-			GBAHardwareEReaderWrite(&memory->hw, address, value);
+			GBACartEReaderWrite(&memory->ereader, address, value);
 			break;
 		} else if (memory->savedata.type == SAVEDATA_AUTODETECT) {
 			mLOG(GBA_MEM, INFO, "Detected EEPROM savegame");
@@ -1058,7 +1056,7 @@ void GBAStore8(struct ARMCore* cpu, uint32_t address, int8_t value, int* cycleCo
 			}
 		}
 		if (memory->hw.devices & HW_EREADER && (address & 0xE00FF80) >= 0xE00FF80) {
-			GBAHardwareEReaderWriteFlash(&memory->hw, address, value);
+			GBACartEReaderWriteFlash(&memory->ereader, address, value);
 		} else if (memory->savedata.type == SAVEDATA_FLASH512 || memory->savedata.type == SAVEDATA_FLASH1M) {
 			GBASavedataWriteFlash(&memory->savedata, address, value);
 		} else if (memory->savedata.type == SAVEDATA_SRAM) {
@@ -1067,9 +1065,12 @@ void GBAStore8(struct ARMCore* cpu, uint32_t address, int8_t value, int* cycleCo
 			} else {
 				memory->savedata.data[address & (SIZE_CART_SRAM - 1)] = value;
 			}
-			memory->savedata.dirty |= SAVEDATA_DIRT_NEW;
+			memory->savedata.dirty |= mSAVEDATA_DIRT_NEW;
 		} else if (memory->hw.devices & HW_TILT) {
 			GBAHardwareTiltWrite(&memory->hw, address & OFFSET_MASK, value);
+		} else if (memory->savedata.type == SAVEDATA_SRAM512) {
+			memory->savedata.data[address & (SIZE_CART_SRAM512 - 1)] = value;
+			memory->savedata.dirty |= mSAVEDATA_DIRT_NEW;
 		} else {
 			mLOG(GBA_MEM, GAME_ERROR, "Writing to non-existent SRAM: 0x%08X", address);
 		}
@@ -1227,9 +1228,13 @@ void GBAPatch32(struct ARMCore* cpu, uint32_t address, int32_t value, int32_t* o
 		if ((address & 0x0001FFFF) < SIZE_VRAM) {
 			LOAD_32(oldValue, address & 0x0001FFFC, gba->video.vram);
 			STORE_32(value, address & 0x0001FFFC, gba->video.vram);
+			gba->video.renderer->writeVRAM(gba->video.renderer, address & 0x0001FFFC);
+			gba->video.renderer->writeVRAM(gba->video.renderer, (address & 0x0001FFFC) | 2);
 		} else {
 			LOAD_32(oldValue, address & 0x00017FFC, gba->video.vram);
 			STORE_32(value, address & 0x00017FFC, gba->video.vram);
+			gba->video.renderer->writeVRAM(gba->video.renderer, address & 0x00017FFC);
+			gba->video.renderer->writeVRAM(gba->video.renderer, (address & 0x00017FFC) | 2);
 		}
 		break;
 	case REGION_OAM:
@@ -1296,9 +1301,11 @@ void GBAPatch16(struct ARMCore* cpu, uint32_t address, int16_t value, int16_t* o
 		if ((address & 0x0001FFFF) < SIZE_VRAM) {
 			LOAD_16(oldValue, address & 0x0001FFFE, gba->video.vram);
 			STORE_16(value, address & 0x0001FFFE, gba->video.vram);
+			gba->video.renderer->writeVRAM(gba->video.renderer, address & 0x0001FFFE);
 		} else {
 			LOAD_16(oldValue, address & 0x00017FFE, gba->video.vram);
 			STORE_16(value, address & 0x00017FFE, gba->video.vram);
+			gba->video.renderer->writeVRAM(gba->video.renderer, address & 0x00017FFE);
 		}
 		break;
 	case REGION_OAM:
@@ -1692,6 +1699,31 @@ void GBAAdjustWaitstates(struct GBA* gba, uint16_t parameters) {
 			STORE_16(memory->agbPrintCtxBackup.get, (AGB_PRINT_STRUCT | base) + 4, memory->rom);
 			STORE_16(memory->agbPrintCtxBackup.put, (AGB_PRINT_STRUCT | base) + 6, memory->rom);
 			STORE_32(memory->agbPrintFuncBackup, AGB_PRINT_FLUSH_ADDR | base, memory->rom);
+		}
+	}
+}
+
+void GBAAdjustEWRAMWaitstates(struct GBA* gba, uint16_t parameters) {
+	struct GBAMemory* memory = &gba->memory;
+	struct ARMCore* cpu = gba->cpu;
+
+	int wait = 15 - ((parameters >> 8) & 0xF);
+	if (wait) {
+		memory->waitstatesNonseq16[REGION_WORKING_RAM] = wait;
+		memory->waitstatesSeq16[REGION_WORKING_RAM] = wait;
+		memory->waitstatesNonseq32[REGION_WORKING_RAM] = 2 * wait + 1;
+		memory->waitstatesSeq32[REGION_WORKING_RAM] = 2 * wait + 1;
+
+		cpu->memory.activeSeqCycles32 = memory->waitstatesSeq32[memory->activeRegion];
+		cpu->memory.activeSeqCycles16 = memory->waitstatesSeq16[memory->activeRegion];
+
+		cpu->memory.activeNonseqCycles32 = memory->waitstatesNonseq32[memory->activeRegion];
+		cpu->memory.activeNonseqCycles16 = memory->waitstatesNonseq16[memory->activeRegion];
+	} else {
+		if (!gba->hardCrash) {
+			mLOG(GBA_MEM, GAME_ERROR, "Cannot set EWRAM to 0 waitstates");
+		} else {
+			mLOG(GBA_MEM, FATAL, "Cannot set EWRAM to 0 waitstates");
 		}
 	}
 }

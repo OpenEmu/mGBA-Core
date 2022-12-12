@@ -20,6 +20,7 @@
 
 CXX_GUARD_START
 
+#include <assert.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -83,6 +84,10 @@ typedef intptr_t ssize_t;
 #define M_PI 3.141592654f
 #endif
 
+#if !defined(__cplusplus) && !defined(static_assert)
+#define static_assert(X, C) _Static_assert((X), C)
+#endif
+
 #if !defined(_MSC_VER) && (defined(__llvm__) || (__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7))
 #define ATOMIC_STORE(DST, SRC) __atomic_store_n(&DST, SRC, __ATOMIC_RELEASE)
 #define ATOMIC_LOAD(DST, SRC) DST = __atomic_load_n(&SRC, __ATOMIC_ACQUIRE)
@@ -116,7 +121,7 @@ typedef intptr_t ssize_t;
 #define ATOMIC_LOAD_PTR(DST, SRC) ATOMIC_LOAD(DST, SRC)
 #endif
 
-#if defined(_3DS) || defined(GEKKO) || defined(PSP2)
+#if defined(__3DS__) || defined(GEKKO) || defined(PSP2)
 // newlib doesn't support %z properly by default
 #define PRIz ""
 #elif defined(_MSC_VER)
@@ -252,9 +257,9 @@ typedef intptr_t ssize_t;
 #define ATTRIBUTE_NOINLINE
 // Adapted from https://stackoverflow.com/a/2390626
 #define _CONSTRUCTOR(FN, PRE) \
-    static void FN(void); \
-    __declspec(allocate(".CRT$XCU")) void (*_CONSTRUCTOR_ ## FN)(void) = FN; \
-    static void FN(void)
+	static void FN(void); \
+	__declspec(allocate(".CRT$XCU")) void (*_CONSTRUCTOR_ ## FN)(void) = FN; \
+	static void FN(void)
 #ifdef _WIN64
 #define CONSTRUCTOR(FN) _CONSTRUCTOR(FN, "")
 #else

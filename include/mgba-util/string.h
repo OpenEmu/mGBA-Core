@@ -28,11 +28,14 @@ bool endswith(const char* restrict s1, const char* restrict end);
 bool startswith(const char* restrict s1, const char* restrict start);
 
 size_t toUtf8(uint32_t unichar, char* buffer);
+size_t toUtf16(uint32_t unichar, uint16_t* buffer);
 int utfcmp(const uint16_t* utf16, const char* utf8, size_t utf16Length, size_t utf8Length);
 char* utf16to8(const uint16_t* utf16, size_t length);
 uint32_t utf8Char(const char** unicode, size_t* length);
 uint32_t utf16Char(const uint16_t** unicode, size_t* length);
+char* latin1ToUtf8(const char* latin1, size_t length);
 char* gbkToUtf8(const char* gbk, size_t length);
+size_t utf8strlen(const char* string);
 
 int hexDigit(char digit);
 const char* hex32(const char* line, uint32_t* out);

@@ -144,7 +144,7 @@ static struct mLogger logger = { .log = _log };
 	available = blip_samples_avail(core->getAudioChannel(core, 0));
 	blip_read_samples(core->getAudioChannel(core, 0), samples, available, true);
 	blip_read_samples(core->getAudioChannel(core, 1), samples + 1, available, true);
-	[[self ringBufferAtIndex:0] write:samples maxLength:available * 4];
+	[[self audioBufferAtIndex:0] write:samples maxLength:available * 4];
 }
 
 - (void)resetEmulation

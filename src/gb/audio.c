@@ -138,6 +138,9 @@ void GBAudioReset(struct GBAudio* audio) {
 }
 
 void GBAudioResizeBuffer(struct GBAudio* audio, size_t samples) {
+	if (samples > BLIP_BUFFER_SIZE / 2) {
+		samples = BLIP_BUFFER_SIZE / 2;
+	}
 	mCoreSyncLockAudio(audio->p->sync);
 	audio->samples = samples;
 	blip_clear(audio->left);
@@ -1089,6 +1092,8 @@ void GBAudioPSGDeserialize(struct GBAudio* audio, const struct GBSerializedPSGSt
 			audio->ch4.lastEvent = currentTime + (when & (cycles - 1)) - cycles;
 		}
 	}
+	audio->ch4.nSamples = 0;
+	audio->ch4.samples = 0;
 }
 
 void GBAudioSerialize(const struct GBAudio* audio, struct GBSerializedState* state) {

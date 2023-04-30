@@ -213,6 +213,7 @@ void GBAReset(struct ARMCore* cpu) {
 	gba->earlyExit = false;
 	gba->dmaPC = 0;
 	gba->biosStall = 0;
+	gba->keysLast = 0x400;
 	if (gba->yankedRomSize) {
 		gba->memory.romSize = gba->yankedRomSize;
 		gba->memory.romMask = toPow2(gba->memory.romSize) - 1;
@@ -274,8 +275,10 @@ void GBASkipBIOS(struct GBA* gba) {
 	if (cpu->gprs[ARM_PC] == BASE_RESET + WORD_SIZE_ARM) {
 		if (gba->memory.rom) {
 			cpu->gprs[ARM_PC] = BASE_CART0;
-		} else {
+		} else if (gba->memory.wram[0x30]) {
 			cpu->gprs[ARM_PC] = BASE_WORKING_RAM + 0xC0;
+		} else {
+			cpu->gprs[ARM_PC] = BASE_WORKING_RAM;
 		}
 		gba->video.vcount = 0x7E;
 		gba->memory.io[REG_VCOUNT >> 1] = 0x7E;

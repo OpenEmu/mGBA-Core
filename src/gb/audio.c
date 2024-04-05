@@ -100,22 +100,24 @@ void GBAudioReset(struct GBAudio* audio) {
 	audio->ch3 = (struct GBAudioWaveChannel) { .bank = 0 };
 	audio->ch4 = (struct GBAudioNoiseChannel) { .nSamples = 0 };
 	// TODO: DMG randomness
-	audio->ch3.wavedata8[0] = 0x00;
-	audio->ch3.wavedata8[1] = 0xFF;
-	audio->ch3.wavedata8[2] = 0x00;
-	audio->ch3.wavedata8[3] = 0xFF;
-	audio->ch3.wavedata8[4] = 0x00;
-	audio->ch3.wavedata8[5] = 0xFF;
-	audio->ch3.wavedata8[6] = 0x00;
-	audio->ch3.wavedata8[7] = 0xFF;
-	audio->ch3.wavedata8[8] = 0x00;
-	audio->ch3.wavedata8[9] = 0xFF;
-	audio->ch3.wavedata8[10] = 0x00;
-	audio->ch3.wavedata8[11] = 0xFF;
-	audio->ch3.wavedata8[12] = 0x00;
-	audio->ch3.wavedata8[13] = 0xFF;
-	audio->ch3.wavedata8[14] = 0x00;
-	audio->ch3.wavedata8[15] = 0xFF;
+	if (audio->style != GB_AUDIO_GBA) {
+		audio->ch3.wavedata8[0] = 0x00;
+		audio->ch3.wavedata8[1] = 0xFF;
+		audio->ch3.wavedata8[2] = 0x00;
+		audio->ch3.wavedata8[3] = 0xFF;
+		audio->ch3.wavedata8[4] = 0x00;
+		audio->ch3.wavedata8[5] = 0xFF;
+		audio->ch3.wavedata8[6] = 0x00;
+		audio->ch3.wavedata8[7] = 0xFF;
+		audio->ch3.wavedata8[8] = 0x00;
+		audio->ch3.wavedata8[9] = 0xFF;
+		audio->ch3.wavedata8[10] = 0x00;
+		audio->ch3.wavedata8[11] = 0xFF;
+		audio->ch3.wavedata8[12] = 0x00;
+		audio->ch3.wavedata8[13] = 0xFF;
+		audio->ch3.wavedata8[14] = 0x00;
+		audio->ch3.wavedata8[15] = 0xFF;
+	}
 	audio->ch4 = (struct GBAudioNoiseChannel) { .envelope = { .dead = 2 } };
 	audio->frame = 0;
 	audio->sampleInterval = SAMPLE_INTERVAL * GB_MAX_SAMPLES;
@@ -506,7 +508,7 @@ void GBAudioRun(struct GBAudio* audio, int32_t timestamp, int channels) {
 		GBAudioSample(audio, timestamp);
 	}
 
-	if (audio->playingCh1 && (channels & 0x1) && audio->ch1.envelope.dead != 2) {
+	if ((channels & 0x1) && ((audio->playingCh1 && audio->ch1.envelope.dead != 2) || timestamp - audio->ch1.lastUpdate > 0x40000000 || (channels == 0x1))) {
 		int period = 4 * (2048 - audio->ch1.control.frequency) * audio->timingFactor;
 		int32_t diff = timestamp - audio->ch1.lastUpdate;
 		if (diff >= period) {
@@ -516,7 +518,7 @@ void GBAudioRun(struct GBAudio* audio, int32_t timestamp, int channels) {
 			_updateSquareSample(&audio->ch1);
 		}
 	}
-	if (audio->playingCh2 && (channels & 0x2) && audio->ch2.envelope.dead != 2) {
+	if ((channels & 0x2) && ((audio->playingCh2 && audio->ch2.envelope.dead != 2) || timestamp - audio->ch2.lastUpdate > 0x40000000 || (channels == 0x2))) {
 		int period = 4 * (2048 - audio->ch2.control.frequency) * audio->timingFactor;
 		int32_t diff = timestamp - audio->ch2.lastUpdate;
 		if (diff >= period) {
@@ -647,7 +649,9 @@ void GBAudioUpdateFrame(struct GBAudio* audio) {
 		if (audio->ch1.sweep.enable) {
 			--audio->ch1.sweep.step;
 			if (audio->ch1.sweep.step == 0) {
-				audio->playingCh1 = _updateSweep(&audio->ch1, false);
+				if (!_updateSweep(&audio->ch1, false)) {
+					audio->playingCh1 = false;
+				}
 				*audio->nr52 &= ~0x0001;
 				*audio->nr52 |= audio->playingCh1;
 			}
@@ -846,9 +850,6 @@ static void _sample(struct mTiming* timing, void* user, uint32_t cyclesLate) {
 bool _resetEnvelope(struct GBAudioEnvelope* envelope) {
 	envelope->currentVolume = envelope->initialVolume;
 	_updateEnvelopeDead(envelope);
-	if (!envelope->dead) {
-		envelope->nextStep = envelope->stepTime;
-	}
 	return envelope->initialVolume || envelope->direction;
 }
 
@@ -880,12 +881,25 @@ void _writeDuty(struct GBAudioEnvelope* envelope, uint8_t value) {
 }
 
 bool _writeEnvelope(struct GBAudioEnvelope* envelope, uint8_t value, enum GBAudioStyle style) {
+	bool oldDirection = envelope->direction;
 	envelope->stepTime = GBAudioRegisterSweepGetStepTime(value);
 	envelope->direction = GBAudioRegisterSweepGetDirection(value);
 	envelope->initialVolume = GBAudioRegisterSweepGetInitialVolume(value);
-	if (style == GB_AUDIO_DMG && !envelope->stepTime) {
+	if (!envelope->stepTime) {
 		// TODO: Improve "zombie" mode
-		++envelope->currentVolume;
+		if (style == GB_AUDIO_DMG) {
+			++envelope->currentVolume;
+		} else if (style == GB_AUDIO_CGB) {
+			if (envelope->direction == oldDirection) {
+				if (envelope->direction) {
+					++envelope->currentVolume;
+				} else {
+					envelope->currentVolume += 2;
+				}
+			} else {
+				envelope->currentVolume = 0;
+			}
+		}
 		envelope->currentVolume &= 0xF;
 	}
 	_updateEnvelopeDead(envelope);
@@ -933,6 +947,7 @@ static void _updateEnvelopeDead(struct GBAudioEnvelope* envelope) {
 		envelope->dead = 1;
 	} else {
 		envelope->dead = 0;
+		envelope->nextStep = envelope->stepTime;
 	}
 }
 

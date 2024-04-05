@@ -155,7 +155,7 @@
 		1058C7ADFEA557BF11CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		8701D2A71D19D30E00E8A7D8 /* OEGBASystemResponderClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OEGBASystemResponderClient.h; path = "../OpenEmu/SystemPlugins/GameBoy Advance/OEGBASystemResponderClient.h"; sourceTree = "<group>"; };
 		8701D2A81D19D36600E8A7D8 /* mGBAGameCore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mGBAGameCore.h; path = src/platform/openemu/mGBAGameCore.h; sourceTree = "<group>"; };
-		8701D2A91D19D36600E8A7D8 /* mGBAGameCore.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = mGBAGameCore.m; path = src/platform/openemu/mGBAGameCore.m; sourceTree = "<group>"; };
+		8701D2A91D19D36600E8A7D8 /* mGBAGameCore.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = mGBAGameCore.m; path = src/platform/openemu/mGBAGameCore.m; sourceTree = "<group>"; usesTabs = 0; };
 		8701D2AD1D19D4A900E8A7D8 /* arm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = arm.c; sourceTree = "<group>"; };
 		8701D2AF1D19D4A900E8A7D8 /* decoder-arm.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "decoder-arm.c"; sourceTree = "<group>"; };
 		8701D2B11D19D4A900E8A7D8 /* decoder-thumb.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "decoder-thumb.c"; sourceTree = "<group>"; };
@@ -851,6 +851,7 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0.10.3;
 				EXPORTED_SYMBOLS_FILE = "";
 				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = (
@@ -887,6 +888,7 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0.10.3;
 				EXPORTED_SYMBOLS_FILE = "";
 				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = (
@@ -922,7 +924,6 @@
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_EXPERIMENTAL = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
@@ -960,7 +961,6 @@
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_EXPERIMENTAL = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_EMPTY_BODY = YES;

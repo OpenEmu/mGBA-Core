@@ -223,7 +223,7 @@ static struct mLogger logger = { .log = _log };
 	struct VFile* vf = VFileMemChunk(nil, 0);
 	if (!mCoreSaveStateNamed(core, vf, SAVESTATE_SAVEDATA)) {
 		if (outError) {
-			*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotLoadStateError userInfo:nil];
+			*outError = [NSError errorWithDomain:OEGameCoreErrorDomain code:OEGameCoreCouldNotSaveStateError userInfo:nil];
 		}
 		vf->close(vf);
 		return nil;

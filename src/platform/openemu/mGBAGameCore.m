@@ -32,16 +32,25 @@
 #include <mgba/core/serialize.h>
 #include <mgba/gba/core.h>
 #include <mgba/internal/gba/cheats.h>
+#include <mgba/internal/gba/gba.h>
 #include <mgba/internal/gba/input.h>
+#include <mgba/internal/gba/io.h>
 #include <mgba-util/circle-buffer.h>
 #include <mgba-util/memory.h>
 #include <mgba-util/vfs.h>
 
 #import <OpenEmuBase/OERingBuffer.h>
+#import <OpenEmuBase/OEGameCoreDisplayModes.h>
 #import "OEGBASystemResponderClient.h"
 #import <OpenGL/gl.h>
 
 #define SAMPLES 1024
+
+#define DISPCNT_WINDOW_ENABLE_MASK 0xE000 // WIN0, WIN1 and OBJWIN enable bits
+#define BLDCNT_EFFECT_MASK 0x00C0 // Color special effect (alpha, brighten, darken)
+
+static NSString *const mGBADisableSFXPrefKey = @"disableSFX";
+static NSString *const mGBAVideoLayerPrefKeyFormat = @"videoLayer.%s";
 
 #ifdef DEBUG
     #error "Cores should not be compiled in DEBUG! Follow the guide https://github.com/OpenEmu/OpenEmu/wiki/Compiling-From-Source-Guide"
@@ -54,6 +63,8 @@ const char* const binaryName = "mGBA";
 	struct mCore* core;
 	void* outputBuffer;
 	NSMutableDictionary *cheatSets;
+	NSMutableDictionary<NSString *, NSNumber *> *displayModeState;
+	BOOL videoOptionsDirty;
 }
 @end
 
@@ -65,6 +76,26 @@ static void _log(struct mLogger* log,
 {}
 
 static struct mLogger logger = { .log = _log };
+
+// Each game runs in its own helper process, so a single filter state suffices.
+// Only touched from the emulation thread (see -applyVideoOptions).
+static bool disableSFX;
+static uint16_t (*originalWriteVideoRegister)(struct GBAVideoRenderer*, uint32_t, uint16_t);
+
+// Equivalent of VisualBoyAdvance's "Disable SFX": the renderer never sees windows or
+// color special effects enabled, while the register value the game reads back is unchanged.
+static uint16_t _writeVideoRegisterFilteringSFX(struct GBAVideoRenderer* renderer, uint32_t address, uint16_t value)
+{
+	uint16_t mask = 0;
+	if (disableSFX) {
+		if (address == REG_DISPCNT) {
+			mask = DISPCNT_WINDOW_ENABLE_MASK;
+		} else if (address == REG_BLDCNT) {
+			mask = BLDCNT_EFFECT_MASK;
+		}
+	}
+	return originalWriteVideoRegister(renderer, address, value & ~mask) | (value & mask);
+}
 
 @implementation mGBAGameCore
 
@@ -92,6 +123,7 @@ static struct mLogger logger = { .log = _log };
 		core->setVideoBuffer(core, outputBuffer, width);
 		core->setAudioBufferSize(core, SAMPLES);
 		cheatSets = [[NSMutableDictionary alloc] init];
+		displayModeState = [[NSMutableDictionary alloc] init];
 	}
 
 	return self;
@@ -128,11 +160,29 @@ static struct mLogger logger = { .log = _log };
 
 	core->reset(core);
 
+	struct GBA* gba = core->board;
+	struct GBAVideoRenderer* renderer = gba->video.renderer;
+	if (renderer->writeVideoRegister != _writeVideoRegisterFilteringSFX) {
+		originalWriteVideoRegister = renderer->writeVideoRegister;
+		renderer->writeVideoRegister = _writeVideoRegisterFilteringSFX;
+	}
+
+	@synchronized (self) {
+		for (NSString *key in self.displayModeInfo) {
+			id value = self.displayModeInfo[key];
+			if ([value isKindOfClass:[NSNumber class]]) {
+				displayModeState[key] = value;
+			}
+		}
+		videoOptionsDirty = YES;
+	}
+
 	return YES;
 }
 
 - (void)executeFrame
 {
+	[self applyVideoOptionsIfNeeded];
 	core->runFrame(core);
 
 	int16_t samples[SAMPLES * 2];
@@ -202,6 +252,74 @@ static struct mLogger logger = { .log = _log };
 - (NSTimeInterval)frameInterval
 {
 	return core->frequency(core) / (double) core->frameCycles(core);
+}
+
+#pragma mark - Display Modes
+
+- (BOOL)displayModeStateForKey:(NSString *)key defaultValue:(BOOL)defaultValue
+{
+	@synchronized (self) {
+		NSNumber *value = displayModeState[key];
+		return value ? value.boolValue : defaultValue;
+	}
+}
+
+- (NSArray<NSDictionary<NSString *, id> *> *)displayModes
+{
+	NSMutableArray *layerModes = [NSMutableArray array];
+	const struct mCoreChannelInfo* layers;
+	size_t count = core->listVideoLayers(core, &layers);
+	for (size_t i = 0; i < count; ++i) {
+		NSString *key = [NSString stringWithFormat:mGBAVideoLayerPrefKeyFormat, layers[i].internalName];
+		BOOL visible = [self displayModeStateForKey:key defaultValue:YES];
+		[layerModes addObject:OEDisplayMode_OptionToggleableWithState(@(layers[i].visibleName), key, @(visible))];
+	}
+
+	BOOL sfxDisabled = [self displayModeStateForKey:mGBADisableSFXPrefKey defaultValue:NO];
+	return @[
+		OEDisplayMode_OptionToggleableWithState(@"Disable SFX", mGBADisableSFXPrefKey, @(sfxDisabled)),
+		OEDisplayMode_Submenu(@"Video Layers", layerModes),
+	];
+}
+
+- (void)changeDisplayWithMode:(NSString *)displayMode
+{
+	NSString *key;
+	id state;
+	if (!OEDisplayModeListGetPrefKeyValueFromModeName(self.displayModes, displayMode, &key, &state)) {
+		return;
+	}
+
+	@synchronized (self) {
+		displayModeState[key] = @(![state boolValue]);
+		videoOptionsDirty = YES;
+	}
+}
+
+// Called on the emulation thread, so the renderer is never modified mid-frame.
+- (void)applyVideoOptionsIfNeeded
+{
+	@synchronized (self) {
+		if (!videoOptionsDirty) {
+			return;
+		}
+		videoOptionsDirty = NO;
+	}
+
+	const struct mCoreChannelInfo* layers;
+	size_t count = core->listVideoLayers(core, &layers);
+	for (size_t i = 0; i < count; ++i) {
+		NSString *key = [NSString stringWithFormat:mGBAVideoLayerPrefKeyFormat, layers[i].internalName];
+		core->enableVideoLayer(core, layers[i].id, [self displayModeStateForKey:key defaultValue:YES]);
+	}
+
+	disableSFX = [self displayModeStateForKey:mGBADisableSFXPrefKey defaultValue:NO];
+
+	// Resend the affected registers so the filter takes effect immediately.
+	struct GBA* gba = core->board;
+	struct GBAVideoRenderer* renderer = gba->video.renderer;
+	renderer->writeVideoRegister(renderer, REG_DISPCNT, gba->memory.io[REG_DISPCNT >> 1]);
+	renderer->writeVideoRegister(renderer, REG_BLDCNT, gba->memory.io[REG_BLDCNT >> 1]);
 }
 
 #pragma mark - Audio
